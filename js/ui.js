@@ -45,16 +45,21 @@ export const fmtBytes = n => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Ma
 
 // Places a floating element next to an anchor, flipping above when there isn't room below.
 function place(el, anchor, { gap = 6, align = 'start', prefer = 'below' } = {}) {
-  const r = anchor.getBoundingClientRect(), vw = innerWidth, vh = innerHeight;
+  const r = anchor.getBoundingClientRect(), vw = innerWidth, vh = innerHeight, margin = 8;
   el.style.minWidth = Math.max(r.width, 0) + 'px';
+  el.style.maxWidth = (vw - 2 * margin) + 'px';
+  const cap = parseFloat(getComputedStyle(el).maxHeight) || Infinity;   // the stylesheet's own limit, if any
+  const natural = el.offsetHeight;
+  const below = vh - r.bottom - gap - margin, above = r.top - gap - margin;
+  const up = prefer === 'above' ? above >= natural || above > below : below < natural && above > below;
+  // Limit the height to the space on the chosen side *before* measuring, so the position is computed
+  // from the height it will really have (taller content scrolls inside).
+  el.style.maxHeight = Math.max(120, Math.min(cap, up ? above : below)) + 'px';
   const w = el.offsetWidth, hgt = el.offsetHeight;
-  const below = vh - r.bottom - gap, above = r.top - gap;
-  const up = prefer === 'above' ? above >= hgt || above > below : below < hgt && above > below;
-  el.style.maxHeight = Math.max(160, (up ? above : below) - 10) + 'px';
-  const top = up ? r.top - gap - Math.min(hgt, above - 10) : r.bottom + gap;
+  const top = up ? r.top - gap - hgt : r.bottom + gap;
   let left = align === 'end' ? r.right - w : align === 'center' ? r.left + r.width / 2 - w / 2 : r.left;
-  left = Math.min(Math.max(8, left), vw - w - 8);
-  Object.assign(el.style, { top: Math.max(8, top) + 'px', left: left + 'px' });
+  left = Math.min(Math.max(margin, left), vw - w - margin);
+  Object.assign(el.style, { top: Math.min(Math.max(margin, top), vh - hgt - margin) + 'px', left: left + 'px' });
 }
 
 // Only one floating layer (menu/popover) open at a time; closes on outside click / Escape.

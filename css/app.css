@@ -146,7 +146,8 @@ body.drawer-open .toasts { right: calc(min(400px, 100vw) + 18px); }
 @keyframes slideout { to { opacity: 0; transform: translateX(20px); } }
 
 .pop { position: fixed; z-index: 900; padding: 14px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--line2);
-  box-shadow: var(--shadow); animation: pop .14s var(--ease); display: grid; gap: 14px; min-width: 260px; }
+  box-shadow: var(--shadow); animation: pop .14s var(--ease); display: grid; gap: 14px; min-width: 260px;
+  max-height: calc(100vh - 16px); overflow-y: auto; overscroll-behavior: contain; }
 .pop h4, .drawer h4 { margin: 0 0 8px; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
 .pop .pop-row { display: grid; gap: 6px; }
 
