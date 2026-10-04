@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hero Gallery</title>
+<link rel="stylesheet" href="vendor/inter.css">
+<link rel="stylesheet" href="css/app.css">
+<script src="vendor/spine-player.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "./vendor/three/three.module.js",
+  "three/addons/": "./vendor/three/addons/"
+} }
+</script>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="side" id="side">
+    <div class="side-head">
+      <div class="brand"><h1>Hero Gallery<small>DRAGON TRAVELER</small></h1>
+        <span style="display:flex;gap:2px"><button class="btn ghost icon" id="whatsNew" data-tip="What’s new in the last update" aria-label="What’s new" style="display:none;position:relative"></button>
+        <button class="btn ghost icon" id="helpBtn" data-tip="Keyboard shortcuts" data-kbd="?" aria-label="Keyboard shortcuts"></button></span></div>
+      <label class="field" id="searchField"><span class="s-ic"></span><input id="q" type="search" placeholder="Search heroes or outfits" autocomplete="off" aria-label="Search heroes"><kbd>/</kbd><button class="clear" type="button" aria-label="Clear search"></button></label>
+      <div id="filter"></div>
+    </div>
+    <div class="side-list" id="heroes" role="listbox" aria-label="Heroes"></div>
+    <div class="side-foot"><span id="count"></span><a href="viewer.html" id="allRigs"></a></div>
+  </aside>
+
+  <main class="main">
+    <div class="head">
+      <button class="btn ghost icon menu-toggle" id="menuBtn" aria-label="Show hero list"></button>
+      <img class="portrait" id="portrait" alt="">
+      <div style="min-width:0"><h2 id="heroName">Loading…</h2><div class="sub" id="heroSub"></div></div>
+    </div>
+    <div class="outfits" id="outfits" role="tablist" aria-label="Outfits"></div>
+    <div class="tabbar">
+      <div class="tabs" role="tablist" id="tabs">
+        <button class="tab" role="tab" data-tab="spine" data-kbd="1"></button>
+        <button class="tab" role="tab" data-tab="art" data-kbd="2"></button>
+        <button class="tab" role="tab" data-tab="video" data-kbd="3"></button>
+        <button class="tab" role="tab" data-tab="model" data-kbd="4"></button>
+      </div>
+      <span class="spacer"></span>
+      <button class="btn ghost icon" id="fullBtn" data-tip="Fullscreen" data-kbd="F" aria-label="Fullscreen"></button>
+      <button class="btn primary" id="exportBtn" data-tip="Export image, GIF or video" data-kbd="E"></button>
+    </div>
+
+    <section class="panel" id="panel-spine" role="tabpanel">
+      <div class="stage-wrap" id="spineWrap">
+        <div class="stage" id="spineStage"><div class="phone" id="phone"><div class="screen" id="screen"></div></div></div>
+        <div class="loading" id="spineLoading"><div class="ld"><div class="spinner"></div><span></span></div></div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-art" role="tabpanel">
+      <div class="toolbar"><span id="censorWrap"></span><span style="flex:1"></span><span id="artCount"></span></div>
+      <div class="gallery" id="gallery"></div>
+    </section>
+
+    <section class="panel" id="panel-video" role="tabpanel"><div id="videoBox" style="flex:1;display:flex;min-height:0"></div></section>
+
+    <section class="panel" id="panel-model" role="tabpanel">
+      <div class="stage-wrap" id="modelWrap">
+        <div class="stage model-stage" id="modelStage"><div class="model-box" id="modelBox"></div></div>
+        <div class="stage-hint" id="modelHint">Drag to orbit · Right-drag to pan · Scroll to zoom</div>
+        <div class="loading" id="modelLoading"><div class="ld"><div class="spinner"></div><span></span></div></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script type="module">
+import { icon, h, esc, store, recall, dropdown, segmented, toggle, slider, swatches, toast, modal, lightbox, initTooltips, typing, anyLayerOpen, closePopovers } from './js/ui.js';
+import { SpineStage, layoutPhone } from './js/spine-stage.js';
+import { createDock, createExportDrawer, createVideoPlayer, groupClip, attachTaps, spineSettings, spineAnimItems } from './js/player-ui.js';
+import { voiceSettings, saveVoiceSettings, playVoice, stopVoice, setSoundEnabled } from './js/voice.js';
+import { safeFilename } from './js/export.js';
+
+const $ = s => document.querySelector(s);
+initTooltips();
+
+// Static icons
+$('#helpBtn').innerHTML = icon('keyboard');
+$('#searchField .s-ic').outerHTML = icon('search');
+$('#searchField .clear').innerHTML = icon('x');
+$('#allRigs').innerHTML = `${icon('grid')}All Spine rigs`;
+$('#menuBtn').innerHTML = icon('menu');
+$('#fullBtn').innerHTML = icon('maximize');
+$('#exportBtn').innerHTML = `${icon('download')}<span>Export</span>`;
+const TABS = { spine: ['sparkles', 'Animated'], art: ['image', 'Art'], video: ['film', 'Videos'], model: ['box', '3D Model'] };
+document.querySelectorAll('.tab').forEach(t => { const [ic, label] = TABS[t.dataset.tab]; t.innerHTML = `${icon(ic)}<span class="t-label">${label}</span>`; });
+
+// ---------- Data ----------
+let heroes = [], models = {}, rigs = {};
+let hero = null, skin = null, tab = null, filter = recall('heroFilter', 'all'), visible = [];
+const [data, manifest] = await Promise.all([
+  fetch('heroes.json', { cache: 'no-cache' }).then(r => r.json()),
+  fetch('manifest.json', { cache: 'no-cache' }).then(r => r.json()),
+]).catch(e => { toast('Could not load the gallery data', { type: 'error', message: e.message, duration: 0 }); throw e; });
+heroes = data.heroes; models = data.models || {};
+const whatsNew = await fetch('whatsnew.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).catch(() => null);
+const newHeroIds = new Set([...(whatsNew?.newHeroes || []).map(x => x.hero), ...(whatsNew?.newOutfits || []).map(x => x.hero)]);
+for (const r of manifest) rigs[r.skel] = r;
+const caps = s => ({ spine: !!s.spine, art: Object.keys(s.art).length > 0, video: Object.keys(s.videos).length > 0, model: !!s.model });
+const heroCaps = h => h.skins.reduce((a, s) => { const c = caps(s); for (const k in c) a[k] ||= c[k]; return a; }, {});
+const thumb = (src, name, cls = 'thumb') => src ? `<img class="${cls}" loading="lazy" src="${esc(src)}" alt="">` : `<span class="${cls} ph">${esc((name || '?')[0])}</span>`;
+
+// ---------- Sidebar ----------
+const filterSeg = segmented({ block: true, value: filter, label: 'Filter heroes', onChange: v => { filter = v; store('heroFilter', v); renderHeroes(); },
+  options: [{ value: 'all', label: 'All' }, { value: 'spine', label: 'Animated', tip: 'Heroes with animated art' }, { value: 'model', label: '3D', tip: 'Heroes with a 3D model' }, { value: 'video', label: 'Video', tip: 'Heroes with showcase videos' }] });
+$('#filter').append(filterSeg);
+const searchText = h => [h.name, h.title, ...h.skins.map(s => s.name)].join(' ').toLowerCase();
+function renderHeroes() {
+  const q = $('#q').value.trim().toLowerCase();
+  $('#searchField').classList.toggle('has-value', !!q);
+  visible = heroes.filter(h => (!q || searchText(h).includes(q)) && (filter === 'all' || heroCaps(h)[filter]));
+  const list = $('#heroes');
+  list.innerHTML = '';
+  if (!visible.length) list.innerHTML = `<div class="list-empty">No heroes match${q ? ` “${esc(q)}”` : ''}.</div>`;
+  for (const h of visible) {
+    const c = heroCaps(h);
+    const b = document.createElement('button');
+    b.className = 'item' + (h === hero ? ' on' : ''); b.setAttribute('role', 'option'); b.setAttribute('aria-selected', h === hero);
+    b.dataset.tip = [h.name, h.title, h.skins.length > 1 ? `${h.skins.length} outfits` : ''].filter(Boolean).join(' · ');
+    b.innerHTML = `${thumb(h.icon, h.name)}<span class="meta"><div class="name">${esc(h.name)}${newHeroIds.has(h.id) ? '<span class="new-tag">new</span>' : ''}</div><div class="sub">${esc(h.title)}</div></span>
+      <span class="caps">${c.spine ? icon('sparkles') : ''}${c.model ? icon('box') : ''}${c.video ? icon('film') : ''}${h.skins.length > 1 ? `<span class="badge" data-tip="${h.skins.length} outfits">${h.skins.length}</span>` : ''}</span>`;
+    b.onclick = () => { selectHero(h); $('#app').classList.remove('nav-open'); };
+    list.append(b);
+  }
+  $('#count').textContent = visible.length === heroes.length ? `${heroes.length} heroes` : `${visible.length} of ${heroes.length}`;
+}
+$('#q').oninput = renderHeroes;
+$('#q').addEventListener('keydown', e => { if (e.key === 'Escape') { $('#q').value = ''; renderHeroes(); $('#q').blur(); } if (e.key === 'Enter' && visible[0]) selectHero(visible[0]); });
+$('#searchField .clear').onclick = () => { $('#q').value = ''; renderHeroes(); $('#q').focus(); };
+$('#menuBtn').onclick = () => $('#app').classList.toggle('nav-open');
+
+// ---------- Selection & routing (#h=heroId&s=skinId&t=tab) ----------
+function selectHero(h, skinId, tabName) {
+  hero = h;
+  document.querySelectorAll('#heroes .item').forEach((b, i) => { const on = visible[i] === h; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); if (on) b.scrollIntoView({ block: 'nearest' }); });
+  $('#portrait').src = h.icon || ''; $('#portrait').style.visibility = h.icon ? '' : 'hidden';
+  $('#heroName').textContent = h.name;
+  $('#heroSub').textContent = [h.title, `${h.skins.length} outfit${h.skins.length > 1 ? 's' : ''}`].filter(Boolean).join(' · ');
+  document.title = `${h.name} · Hero Gallery`;
+  const box = $('#outfits'); box.innerHTML = '';
+  for (const s of h.skins) {
+    const c = caps(s);
+    const tip = [c.spine && 'Animated', c.art && 'Art', c.video && 'Videos', c.model && '3D model'].filter(Boolean).join(' · ');
+    const b = h_(`<button class="outfit" role="tab" data-id="${s.id}" data-tip="${esc(tip)}">${thumb(s.icon || h.icon, s.name, '')}<span><span class="o-name">${esc(s.name)}</span>
+      <span class="o-caps">${c.spine ? icon('sparkles') : ''}${c.art ? icon('image') : ''}${c.video ? icon('film') : ''}${c.model ? icon('box') : ''}</span></span></button>`);
+    b.onclick = () => selectSkin(s);
+    box.append(b);
+  }
+  selectSkin(h.skins.find(s => s.id === skinId) || h.skins[0], tabName);
+}
+const h_ = h;
+
+function selectSkin(s, tabName) {
+  skin = s;
+  document.querySelectorAll('.outfit').forEach(b => { const on = +b.dataset.id === s.id; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); if (on) b.scrollIntoView({ block: 'nearest', inline: 'nearest' }); });
+  const c = caps(s);
+  document.querySelectorAll('.tab').forEach(t => {
+    t.disabled = !c[t.dataset.tab];
+    t.dataset.tip = t.disabled ? `${TABS[t.dataset.tab][1]} — not available for this outfit` : TABS[t.dataset.tab][1];
+  });
+  spineStage.dispose(); spineLoaded = null; modelLoaded = null;
+  selectTab([tabName, tab, 'spine', 'art', 'video', 'model'].find(t => t && c[t]) || 'art');
+}
+
+function selectTab(name) {
+  if (tab === 'video' && name !== 'video') video?.stop();
+  if (tab === 'spine' && name !== 'spine') stopVoice();
+  tab = name;
+  document.querySelectorAll('.tab').forEach(t => t.setAttribute('aria-selected', t.dataset.tab === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('on', p.id === 'panel-' + name));
+  $('#exportBtn').style.display = $('#fullBtn').style.display = name === 'spine' || name === 'model' ? '' : 'none';
+  if (name === 'video') $('#fullBtn').style.display = '';
+  history.replaceState(null, '', `#h=${hero.id}&s=${skin.id}&t=${name}`);
+  ({ spine: showSpine, art: showArt, video: showVideos, model: showModel })[name]();
+}
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => !t.disabled && selectTab(t.dataset.tab));
+
+function route() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  const h = heroes.find(h => h.id === +p.get('h')) || hero || heroes[0];
+  if (h !== hero) return selectHero(h, +p.get('s'), p.get('t'));
+  const s = h.skins.find(s => s.id === +p.get('s'));
+  if (s && s !== skin) return selectSkin(s, p.get('t'));
+  const t = p.get('t');
+  if (t && t !== tab && !document.querySelector(`.tab[data-tab="${t}"]`)?.disabled) selectTab(t);
+}
+addEventListener('hashchange', route);
+
+function setLoading(el, state, text = '') {
+  el.style.display = state ? '' : 'none';
+  el.classList.toggle('error', state === 'error');
+  el.querySelector('span').textContent = text;
+}
+
+// ---------- Export drawer (shared) ----------
+const drawer = createExportDrawer();
+const activeAdapter = () => tab === 'spine' ? spineAdapter : tab === 'model' ? modelAdapter : null;
+$('#exportBtn').onclick = () => activeAdapter() && drawer.open(activeAdapter());
+$('#fullBtn').onclick = () => {
+  const el = $(tab === 'spine' ? '#spineWrap' : '#modelWrap');
+  if (tab === 'video') return video?.fullscreen();
+  document.fullscreenElement ? document.exitFullscreen() : el.requestFullscreen();
+};
+
+// ---------- Animated (Spine) ----------
+const spineStage = new SpineStage($('#screen'));
+spineStage.restricted = recall('restricted') === 'true';
+let spineLoaded = null, spineReady = false;
+let phoneZoom = +recall('phoneZoom', 100);
+const interactions = await fetch('interactions.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : {}).catch(() => ({}));
+const spineAdapter = {
+  kind: 'spine',
+  ready: () => spineReady && !!spineStage.player?.skeleton,
+  get paused() { return spineStage.paused; }, get time() { return spineStage.time; }, get duration() { return spineStage.duration(); },
+  pause: () => spineStage.pause(), resume: () => spineStage.resume(), seek: t => spineStage.seek(t),
+  animations: () => spineAnimItems(spineStage),
+  current: () => spineStage.mode === 'interactive' ? '__interactive' : spineStage.anim,
+  setAnimation: n => { n === '__interactive' ? spineStage.startInteractive() : spineStage.play(n); spineDock.sync(); updateTapHint(); },
+  settings: () => spineSettings(spineStage, {
+    zoom: () => phoneZoom, setZoom: v => { phoneZoom = v; store('phoneZoom', v); layoutSpine(); }, taps,
+    voice: { settings: voiceSettings, save: saveVoiceSettings, greet: () => greet(true), setEnabled: v => { sound.set(v); spineDock.syncSound(); } },
+  }),
+  beginCapture: o => spineStage.beginCapture(o),
+  aspect: f => f === 'phone' && spineStage.camRect ? spineStage.camRect.w / spineStage.camRect.h : null,
+  filename: () => `${hero.name} - ${skin.name} - ${spineStage.anim}`,
+};
+const sound = { get on() { return voiceSettings.enabled; }, set(v) { setSoundEnabled(v); if (v) greet(true); } };
+const spineDock = createDock($('#spineWrap'), spineAdapter, { onSnapshot: () => drawer.snapshot(spineAdapter), sound });
+const taps = attachTaps($('#screen'), spineStage);
+const tapHint = h(`<div class="chip-hint" style="opacity:0">${icon('pointer')}<span>Tap the character to interact</span></div>`);
+$('#spineWrap').append(tapHint);
+function updateTapHint() {
+  const on = spineStage.mode === 'interactive' && spineStage.inter?.clicks.length > 0;
+  tapHint.style.opacity = on ? 1 : 0;
+  clearTimeout(updateTapHint.t);
+  if (on) updateTapHint.t = setTimeout(() => tapHint.style.opacity = 0, 4000);
+}
+// Voice lines: the act's one-shot animations map to the outfit's click voices
+spineStage.onAct = (act, names) => {
+  const v = spineStage.inter?.voices?.anims;
+  if (!v) return;
+  for (const n of names) if (v[n]) { playVoice(v[n]); break; }
+};
+function greet(force) {
+  const v = interactions[skin.spine]?.voices?.appear;
+  if (!v || (!force && !voiceSettings.greet)) return;
+  playVoice(v, { force }).then(ok => { if (!ok && force) toast('No voice line available', { message: 'This outfit’s greeting isn’t in the extracted audio.', type: 'info', duration: 3000 }); });
+}
+
+function layoutSpine() { layoutPhone($('#spineStage'), $('#phone'), $('#screen'), phoneZoom); }
+new ResizeObserver(() => tab === 'spine' && layoutSpine()).observe($('#spineStage'));
+
+async function showSpine() {
+  layoutSpine();
+  if (spineLoaded === skin.spine) return;
+  spineLoaded = skin.spine; spineReady = false;
+  stopVoice();
+  setLoading($('#spineLoading'), 'loading', 'Loading animation…');
+  spineDock.el.style.visibility = 'hidden';
+  try {
+    spineStage.camMode = recall('camMode', 'screen');
+    await spineStage.load(rigs[skin.spine], interactions[skin.spine]);
+  } catch (e) { if (spineLoaded === skin.spine) setLoading($('#spineLoading'), 'error', 'Couldn’t load this animation: ' + e.message); return; }
+  if (spineLoaded !== skin.spine) return;   // switched away while loading
+  spineReady = true;
+  setLoading($('#spineLoading'), null);
+  spineDock.el.style.visibility = '';
+  spineDock.refresh();
+  updateTapHint();
+  greet(false);
+}
+
+// ---------- Art ----------
+let censored = recall('artCensored') === 'true';
+const censorToggle = toggle({ label: 'Censored versions', checked: censored, onChange: v => { censored = v; store('artCensored', String(v)); showArt(); } });
+$('#censorWrap').append(censorToggle);
+const ART = { painting: 'Portrait', card: 'Card', background: 'Background' };
+function showArt() {
+  const items = Object.entries(ART).map(([k, label]) => {
+    const alt = censored && skin.art[k + 'Censored'];
+    const src = alt || skin.art[k];
+    return src && { src, title: `${label}${alt ? ' (censored)' : ''}`, download: safeFilename(`${hero.name} - ${skin.name} - ${label}${alt ? ' (censored)' : ''}`) + '.png' };
+  }).filter(Boolean);
+  censorToggle.style.display = Object.keys(skin.art).some(k => k.endsWith('Censored')) ? '' : 'none';
+  $('#artCount').textContent = items.length ? `${items.length} image${items.length > 1 ? 's' : ''}` : '';
+  const g = $('#gallery'); g.innerHTML = '';
+  if (!items.length) g.innerHTML = `<div class="empty-state">${icon('image')}<span>No art for this outfit.</span></div>`;
+  items.forEach((it, i) => {
+    const t = h(`<div class="tile"><div class="media shimmer" tabindex="0" role="button" aria-label="View ${esc(it.title)}"><img loading="lazy" src="${esc(it.src)}" alt="${esc(it.title)}"></div>
+      <div class="actions"><button class="btn icon sm" data-tip="View full size">${icon('maximize')}</button><a class="btn icon sm" href="${esc(it.src)}" download="${esc(it.download)}" data-tip="Download PNG">${icon('download')}</a></div>
+      <div class="cap"><span><b>${esc(it.title)}</b><small></small></span></div></div>`);
+    const img = t.querySelector('img');
+    img.onload = () => { img.classList.add('loaded'); t.querySelector('.media').classList.remove('shimmer'); t.querySelector('small').textContent = `${img.naturalWidth}×${img.naturalHeight}`; };
+    if (img.complete && img.naturalWidth) img.onload();   // already cached: load fired before the handler existed
+    const openLb = () => lightbox(items, i);
+    t.querySelector('.media').onclick = openLb;
+    t.querySelector('.media').onkeydown = e => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), openLb());
+    t.querySelector('.actions .btn').onclick = openLb;
+    g.append(t);
+  });
+}
+
+// ---------- Videos ----------
+let video = null;
+function showVideos() {
+  video ||= createVideoPlayer($('#videoBox'));
+  const labels = { intro: 'Showcase intro', loop: 'Showcase loop' };
+  video.setSources(Object.entries(skin.videos).map(([k, src]) => ({ label: labels[k] || k, src, download: safeFilename(`${hero.name} - ${skin.name} - ${labels[k] || k}`) + '.webm' })));
+}
+
+// ---------- 3D model ----------
+let modelStage = null, modelLoaded = null, modelReady = false;
+const modelView = { lighting: recall('modelLighting', 'lit'), bg: recall('modelBg', '#1d1d23'), speed: 1, autoRotate: false };
+const modelAdapter = {
+  kind: 'model',
+  ready: () => modelReady && !!modelStage?.model,
+  get paused() { return modelStage.paused; }, get time() { return modelStage.time; }, get duration() { return modelStage.duration(); },
+  pause: () => modelStage.pause(), resume: () => modelStage.resume(), seek: t => modelStage.seek(t),
+  animations: () => modelStage.clipNames.map(c => ({ value: c, label: c, group: groupClip(c) })).sort((a, b) => a.group.localeCompare(b.group) || a.label.localeCompare(b.label)),
+  current: () => modelStage.clipName,
+  setAnimation: n => { modelStage.play(n); modelDock.sync(); },
+  settings: modelSettings,
+  beginCapture: o => modelStage.beginCapture(o),
+  aspect: () => { const c = modelStage.renderer.domElement; return c.width / c.height; },
+  filename: ({ turntable }) => `${hero.name} - ${skin.name} - ${modelStage.clipName}${turntable ? ' - turntable' : ''}`,
+};
+const modelDock = createDock($('#modelWrap'), modelAdapter, { onSnapshot: () => drawer.snapshot(modelAdapter) });
+
+function modelSettings() {
+  const el = h(`<div style="display:grid;gap:16px;width:280px">
+    <div class="pop-row"><h4>Lighting</h4><div class="lt"></div></div>
+    <div class="pop-row"><h4>Background</h4><div class="bg"></div></div>
+    <div class="pop-row"><h4>Speed</h4><div class="spd"></div></div>
+    <div class="pop-row ar"></div>
+    <button class="btn reset" data-kbd="R">${icon('reset')}Reset camera</button></div>`);
+  el.querySelector('.lt').append(segmented({ block: true, value: modelView.lighting, onChange: v => { modelView.lighting = v; store('modelLighting', v); modelStage.setLighting(v); },
+    options: [{ value: 'lit', label: 'Lit' }, { value: 'toon', label: 'Toon', tip: 'Cel shading, closest to the game' }, { value: 'unlit', label: 'Unlit', tip: 'Flat texture colours' }] }));
+  el.querySelector('.bg').append(swatches({ value: modelView.bg, onChange: v => { modelView.bg = v; store('modelBg', v); modelStage.setBackground(v); },
+    options: [{ value: '#1d1d23', label: 'Dark' }, { value: '#3b3f4c', label: 'Slate' }, { value: '#8a8f9c', label: 'Grey' }, { value: '#ffffff', label: 'White' }, { value: '#00b140', label: 'Green screen' }] }));
+  el.querySelector('.spd').append(segmented({ block: true, value: modelView.speed, onChange: v => { modelView.speed = v; modelStage.speed = v; },
+    options: [0.25, 0.5, 1, 1.5, 2].map(v => ({ value: v, label: v + '×' })) }));
+  el.querySelector('.ar').append(toggle({ label: 'Auto-rotate', checked: modelView.autoRotate, onChange: v => { modelView.autoRotate = v; modelStage.controls.autoRotate = v; } }));
+  el.querySelector('.reset').onclick = () => { modelStage.frame(); closePopovers(); };
+  return el;
+}
+
+async function showModel() {
+  if (!modelStage) {
+    setLoading($('#modelLoading'), 'loading', 'Starting 3D viewer…');
+    try {
+      const { ModelStage } = await import('./js/model-stage.js');
+      modelStage = new ModelStage($('#modelBox'));
+    } catch (e) { setLoading($('#modelLoading'), 'error', 'Couldn’t start the 3D viewer: ' + e.message); return; }
+    modelStage.setBackground(modelView.bg); modelStage.lighting = modelView.lighting;
+    modelStage.controls.addEventListener('start', () => $('#modelHint').style.opacity = 0);
+  }
+  if (modelLoaded === skin.model) return;
+  modelLoaded = skin.model; modelReady = false;
+  setLoading($('#modelLoading'), 'loading', 'Loading model…');
+  modelDock.el.style.visibility = 'hidden';
+  try { await modelStage.load(models[skin.model].glb); }
+  catch (e) { if (modelLoaded === skin.model) setLoading($('#modelLoading'), 'error', 'Couldn’t load this model: ' + e.message); return; }
+  if (modelLoaded !== skin.model) return;
+  modelStage.speed = modelView.speed; modelStage.controls.autoRotate = modelView.autoRotate;
+  modelReady = true;
+  setLoading($('#modelLoading'), null);
+  modelDock.el.style.visibility = '';
+  modelDock.refresh();
+}
+
+// ---------- What's new (written by _tools/update.py) ----------
+function showWhatsNew() {
+  const w = whatsNew, link = (hId, sId, label) => `<a href="#h=${hId}${sId ? `&s=${sId}` : ''}" class="wn-link">${esc(label)}</a>`;
+  const sec = (title, items) => items.length ? `<h4 style="margin:14px 0 6px">${title}</h4><div style="display:grid;gap:4px">${items.join('')}</div>` : '';
+  const body = h(`<div><div style="color:var(--muted)">Changes found ${esc(w.date)} · ${esc(w.gameVersion)}${w.lastChecked && w.lastChecked !== w.date ? ` · last checked ${esc(w.lastChecked)}` : ''}</div>
+    ${sec('New heroes', w.newHeroes.map(x => link(x.hero, null, x.name)))}
+    ${sec('New outfits', w.newOutfits.map(x => link(x.hero, x.skin, x.name)))}
+    ${sec('Outfits with new content', w.upgradedOutfits.map(x => link(x.hero, x.skin, `${x.name} (+${x.added.map(k => ({ spine: 'animation', model: '3D model', video: 'videos' })[k] || k).join(', ')})`)))}
+    ${w.newHeroes.length + w.newOutfits.length + w.upgradedOutfits.length ? '' : '<p style="color:var(--muted)">Nothing new in the last update.</p>'}</div>`);
+  const m = modal({ title: 'What’s new', body });
+  body.querySelectorAll('.wn-link').forEach(a => a.addEventListener('click', () => m.close()));
+}
+if (whatsNew) {
+  const n = whatsNew.newHeroes.length + whatsNew.newOutfits.length + whatsNew.upgradedOutfits.length;
+  $('#whatsNew').style.display = '';
+  $('#whatsNew').innerHTML = `${icon('sparkles')}${n ? `<span class="badge dot">${n > 99 ? '99+' : n}</span>` : ''}`;
+  $('#whatsNew').onclick = () => showWhatsNew();
+}
+
+// ---------- Keyboard shortcuts ----------
+const SHORTCUTS = [
+  ['Search heroes', '/'], ['Previous / next hero', '↑ ↓'], ['Previous / next outfit', '← →'], ['Switch tab', '1–4'],
+  ['Play / pause', 'Space'], ['Export', 'E'], ['Save still image', 'S'], ['Fullscreen', 'F'], ['Reset 3D camera', 'R'], ['Sound on / off', 'M'], ['This help', '?'],
+];
+function showHelp() {
+  modal({ title: 'Keyboard shortcuts', body: h(`<div class="shortcuts">${SHORTCUTS.map(([l, k]) => `<span>${esc(l)}</span><span>${k.split(' ').map(x => `<kbd>${esc(x)}</kbd>`).join(' ')}</span>`).join('')}</div>`) });
+}
+$('#helpBtn').onclick = showHelp;
+
+addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey || e.altKey || typing(e) || anyLayerOpen() || drawer.isOpen || document.querySelector('.lightbox, .modal')) return;
+  const k = e.key;
+  const step = (arr, cur, d) => arr[(arr.indexOf(cur) + d + arr.length) % arr.length];
+  if (k === '/') { e.preventDefault(); $('#app').classList.add('nav-open'); $('#q').focus(); $('#q').select(); }
+  else if (k === '?') showHelp();
+  else if (k === 'ArrowDown' || k === 'ArrowUp') { if (visible.length) { e.preventDefault(); selectHero(step(visible, hero, k === 'ArrowDown' ? 1 : -1)); } }
+  else if (k === 'ArrowLeft' || k === 'ArrowRight') { if (hero.skins.length > 1) { e.preventDefault(); selectSkin(step(hero.skins, skin, k === 'ArrowRight' ? 1 : -1)); } }
+  else if (k >= '1' && k <= '4') { const t = document.querySelectorAll('.tab')[+k - 1]; if (!t.disabled) selectTab(t.dataset.tab); }
+  else if (k === ' ') {
+    const a = activeAdapter();
+    if (tab === 'video') { e.preventDefault(); video?.toggle(); }
+    else if (a?.ready()) { e.preventDefault(); a.paused ? a.resume() : a.pause(); }
+  }
+  else if (k.toLowerCase() === 'e') activeAdapter() && drawer.open(activeAdapter());
+  else if (k.toLowerCase() === 's') activeAdapter()?.ready() && drawer.snapshot(activeAdapter());
+  else if (k.toLowerCase() === 'f') $('#fullBtn').style.display !== 'none' && $('#fullBtn').click();
+  else if (k.toLowerCase() === 'r' && tab === 'model') modelStage?.frame();
+  else if (k.toLowerCase() === 'm' && tab === 'spine') { sound.set(!sound.on); spineDock.syncSound(); toast(sound.on ? 'Sound on' : 'Sound off', { duration: 1500 }); }
+});
+
+// ---------- Start ----------
+renderHeroes();
+route();
+</script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+# ---- Game content: never commit. Everything below is extracted from your own client by Update Gallery.bat ----
+/spine/
+/spine_pc/
+/images/
+/videos/
+/audio/
+/models/
+/screenshots/
+
+# Data generated from the game's files
+/heroes.json
+/manifest.json
+/names.json
+/interactions.json
+/whatsnew.json
+/update_log.txt
+/_tools/index.json
+/_tools/index_stamps.json
+/_tools/index_changed.json
+/_tools/extract_state.json
+/_tools/prefab_dirs.json
+
+# Third-party web libraries, downloaded by _tools/vendor.py (see README for their licences)
+/vendor/
+
+# Local settings
+/_tools/config.local.json
+
+# Python / OS / editor noise
+__pycache__/
+*.pyc
+*.part.*
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

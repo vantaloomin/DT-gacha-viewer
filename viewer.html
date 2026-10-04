@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>All Spine Rigs</title>
+<link rel="stylesheet" href="vendor/inter.css">
+<link rel="stylesheet" href="css/app.css">
+<script src="vendor/spine-player.js"></script>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="side">
+    <div class="side-head">
+      <div class="brand"><h1>All Spine rigs<small>HEROES · GODDESSES · UI &amp; EVENTS</small></h1></div>
+      <label class="field" id="searchField"><span class="s-ic"></span><input id="q" type="search" placeholder="Search rigs" autocomplete="off" aria-label="Search rigs"><kbd>/</kbd><button class="clear" type="button" aria-label="Clear search"></button></label>
+      <div id="grpWrap"></div>
+    </div>
+    <div class="side-list" id="list" role="listbox" aria-label="Rigs"></div>
+    <div class="side-foot"><span id="count"></span><a href="index.html" id="back"></a></div>
+  </aside>
+  <main class="main">
+    <div class="head">
+      <button class="btn ghost icon menu-toggle" id="menuBtn" aria-label="Show rig list"></button>
+      <div style="min-width:0"><h2 id="title">Pick a rig</h2><div class="sub" id="sub"></div></div>
+      <span class="spacer"></span>
+      <button class="btn ghost icon" id="fullBtn" data-tip="Fullscreen" data-kbd="F" aria-label="Fullscreen"></button>
+      <button class="btn primary" id="exportBtn" data-tip="Export image, GIF or video" data-kbd="E"></button>
+    </div>
+    <section class="panel on" style="border-top:1px solid var(--line)">
+      <div class="stage-wrap" id="wrap">
+        <div class="stage" id="stage"><div class="phone" id="phone"><div class="screen" id="screen"></div></div></div>
+        <div class="loading" id="loading"><div class="ld"><div class="spinner"></div><span></span></div></div>
+      </div>
+    </section>
+  </main>
+</div>
+<script type="module">
+import { icon, h, esc, store, recall, dropdown, segmented, slider, initTooltips, typing, anyLayerOpen } from './js/ui.js';
+import { SpineStage, layoutPhone } from './js/spine-stage.js';
+import { createDock, createExportDrawer, attachTaps, spineSettings, spineAnimItems } from './js/player-ui.js';
+import { voiceSettings, saveVoiceSettings, playVoice, stopVoice, setSoundEnabled } from './js/voice.js';
+
+const $ = s => document.querySelector(s);
+initTooltips();
+$('#searchField .s-ic').outerHTML = icon('search');
+$('#searchField .clear').innerHTML = icon('x');
+$('#back').innerHTML = `${icon('arrowLeft')}Hero gallery`;
+$('#menuBtn').innerHTML = icon('menu');
+$('#fullBtn').innerHTML = icon('maximize');
+$('#exportBtn').innerHTML = `${icon('download')}<span>Export</span>`;
+
+const label = r => r.title || r.name.replace(/^lihui_/, '');
+const searchText = r => [r.title, r.subtitle, ...(r.also || []), r.skel].join(' ').toLowerCase();
+const GROUPS = { 'spine/hero': 'Heroes', 'spine/goddess': 'Goddesses', 'spine/ui': 'UI & events' };
+
+const stage = new SpineStage($('#screen'));
+stage.restricted = recall('restricted') === 'true';
+let rigs = [], current = null, visible = [], ready = false, group = recall('rigGroup', 'spine/ui');
+let phoneZoom = +recall('phoneZoom', 100);
+
+const [m, interactions] = await Promise.all([
+  fetch('manifest.json', { cache: 'no-cache' }).then(r => r.json()),
+  fetch('interactions.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : {}).catch(() => ({})),
+]);
+rigs = m.sort((a, b) => (!a.title - !b.title) || label(a).localeCompare(label(b)));
+const seen = {};
+for (const r of rigs) (seen[label(r) + '|' + r.subtitle] ||= []).push(r);
+for (const g of Object.values(seen)) if (g.length > 1 && g[0].title)
+  for (const r of g) r.subtitle = [r.subtitle, r.skel.split('/').at(-2)].filter(Boolean).join(' · ');
+
+const groupDd = dropdown({ prefix: 'Show:', value: group, onChange: v => { group = v; store('rigGroup', v); renderList(); },
+  items: [{ value: 'all', label: `Everything`, hint: String(rigs.length) }, ...Object.entries(GROUPS).map(([v, l]) => ({ value: v, label: l, hint: String(rigs.filter(r => r.group === v).length) }))] });
+groupDd.style.width = '100%';
+$('#grpWrap').append(groupDd);
+
+function renderList() {
+  const q = $('#q').value.trim().toLowerCase();
+  $('#searchField').classList.toggle('has-value', !!q);
+  visible = rigs.filter(r => (group === 'all' || r.group === group) && (!q || searchText(r).includes(q)));
+  const list = $('#list'); list.innerHTML = '';
+  if (!visible.length) list.innerHTML = `<div class="list-empty">No rigs match${q ? ` “${esc(q)}”` : ''}.</div>`;
+  for (const r of visible) {
+    const b = h(`<button class="item${r === current ? ' on' : ''}" role="option" aria-selected="${r === current}"><span class="meta">
+      <div class="name">${esc(label(r))}</div><div class="sub">${esc(r.subtitle || r.skel.split('/').slice(2, -1).join('/'))}</div></span></button>`);
+    b.dataset.tip = [r.also && 'Also used by: ' + r.also.join(', '), r.skel].filter(Boolean).join('\n');
+    b.onclick = () => { open(r); $('#app').classList.remove('nav-open'); };
+    list.append(b);
+  }
+  $('#count').textContent = `${visible.length} rigs`;
+}
+$('#q').oninput = renderList;
+$('#q').addEventListener('keydown', e => { if (e.key === 'Escape') { $('#q').value = ''; renderList(); $('#q').blur(); } if (e.key === 'Enter' && visible[0]) open(visible[0]); });
+$('#searchField .clear').onclick = () => { $('#q').value = ''; renderList(); $('#q').focus(); };
+$('#menuBtn').onclick = () => $('#app').classList.toggle('nav-open');
+
+function setLoading(state, text = '') {
+  const el = $('#loading');
+  el.style.display = state ? '' : 'none'; el.classList.toggle('error', state === 'error'); el.querySelector('span').textContent = text;
+}
+
+const adapter = {
+  kind: 'spine',
+  ready: () => ready && !!stage.player?.skeleton,
+  get paused() { return stage.paused; }, get time() { return stage.time; }, get duration() { return stage.duration(); },
+  pause: () => stage.pause(), resume: () => stage.resume(), seek: t => stage.seek(t),
+  animations: () => spineAnimItems(stage),
+  current: () => stage.mode === 'interactive' ? '__interactive' : stage.anim,
+  setAnimation: n => { n === '__interactive' ? stage.startInteractive() : stage.play(n); dock.sync(); },
+  settings: () => spineSettings(stage, {
+    zoom: () => phoneZoom, setZoom: v => { phoneZoom = v; store('phoneZoom', v); layout(); }, taps,
+    voice: { settings: voiceSettings, save: saveVoiceSettings, greet: greetCurrent, setEnabled: v => { sound.set(v); dock.syncSound(); } },
+  }),
+  beginCapture: o => stage.beginCapture(o),
+  aspect: f => f === 'phone' && stage.camRect ? stage.camRect.w / stage.camRect.h : null,
+  filename: () => `${current.title ? `${current.title} - ${current.subtitle || current.name}` : current.name} - ${stage.anim}`,
+};
+const drawer = createExportDrawer();
+const greetCurrent = () => interactions[current?.skel]?.voices?.appear && playVoice(interactions[current.skel].voices.appear, { force: true });
+const sound = { get on() { return voiceSettings.enabled; }, set(v) { setSoundEnabled(v); if (v) greetCurrent(); } };
+const dock = createDock($('#wrap'), adapter, { onSnapshot: () => drawer.snapshot(adapter), sound });
+const taps = attachTaps($('#screen'), stage);
+stage.onAct = (act, names) => { const v = stage.inter?.voices?.anims; if (v) for (const n of names) if (v[n]) { playVoice(v[n]); break; } };
+$('#exportBtn').onclick = () => drawer.open(adapter);
+$('#fullBtn').onclick = () => document.fullscreenElement ? document.exitFullscreen() : $('#wrap').requestFullscreen();
+
+const layout = () => layoutPhone($('#stage'), $('#phone'), $('#screen'), phoneZoom);
+new ResizeObserver(layout).observe($('#stage'));
+layout();
+
+async function open(r) {
+  current = r; ready = false;
+  document.querySelectorAll('#list .item').forEach((b, i) => { const on = visible[i] === r; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); if (on) b.scrollIntoView({ block: 'nearest' }); });
+  history.replaceState(null, '', '#' + encodeURIComponent(r.skel));
+  $('#title').textContent = label(r);
+  $('#sub').textContent = [r.subtitle, GROUPS[r.group]].filter(Boolean).join(' · ');
+  document.title = `${label(r)} · All Spine rigs`;
+  setLoading('loading', 'Loading animation…');
+  dock.el.style.visibility = 'hidden';
+  stage.camMode = recall('camMode', 'screen');
+  stopVoice();
+  try { await stage.load(r, interactions[r.skel]); } catch (e) { if (current === r) setLoading('error', 'Couldn’t load this rig: ' + e.message); return; }
+  if (current !== r) return;
+  ready = true;
+  setLoading(null);
+  dock.el.style.visibility = '';
+  dock.refresh();
+}
+
+addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey || e.altKey || typing(e) || anyLayerOpen() || drawer.isOpen) return;
+  const k = e.key, step = d => visible.length && open(visible[(visible.indexOf(current) + d + visible.length) % visible.length]);
+  if (k === '/') { e.preventDefault(); $('#app').classList.add('nav-open'); $('#q').focus(); $('#q').select(); }
+  else if (k === 'ArrowDown') { e.preventDefault(); step(1); }
+  else if (k === 'ArrowUp') { e.preventDefault(); step(-1); }
+  else if (k === ' ' && adapter.ready()) { e.preventDefault(); adapter.paused ? adapter.resume() : adapter.pause(); }
+  else if (k.toLowerCase() === 'e') drawer.open(adapter);
+  else if (k.toLowerCase() === 's' && adapter.ready()) drawer.snapshot(adapter);
+  else if (k.toLowerCase() === 'f') $('#fullBtn').click();
+  else if (k.toLowerCase() === 'm') { sound.set(!sound.on); dock.syncSound(); }
+});
+
+const fromHash = decodeURIComponent(location.hash.slice(1));
+const start = rigs.find(r => r.skel === fromHash);
+if (start) { group = start.group; groupDd.value = group; }
+renderList();
+open(start || visible[0]);
+</script>
+</body>
+</html>
