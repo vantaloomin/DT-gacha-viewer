@@ -53,9 +53,11 @@ python _tools\config.py "D:\Games\DragonTraveler\client"
   reactions the game defines (Settings → *Show tap zones*). Sound is off by default; turn it on with
   the speaker button (or `M`) for greetings and tap voice lines, in Japanese or Chinese.
 - **Art** — portrait, card and background, with censored variants where the game has them.
-- **Videos** — the in-game showcase intro/loop videos.
+- **Videos** — the in-game showcase intro/loop videos. They wait for Play unless you switch on *Auto-play*.
 - **3D Model** — the battle model with every animation clip (idle, run, skills, reactions, story);
-  orbit/zoom, lit/toon/unlit lighting.
+  orbit/zoom, lit/toon/unlit lighting. Models hold their idle pose until you press Play or pick a clip
+  (Settings → *Auto-play animation* to start them automatically).
+- A hero opens on **Art** (or the 3D model, videos or animation, in that order, if it has no art).
 - **Export** — still PNG, animated WebP, GIF, WebM or a zip of PNG frames, at up to the game's native
   2340 px, with a transparent or solid background; 3D exports can spin as a 360° turntable.
 - **All Spine rigs** (`viewer.html`) — every rig in the game, including goddess rooms, affection

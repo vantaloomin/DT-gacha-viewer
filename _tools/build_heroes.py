@@ -20,6 +20,13 @@ def text(b):
 
 
 dbs = {n: sqlite3.connect(f'file:{DB}/{n}?mode=ro', uri=True) for n in ('h_n.db', 'o_t.db', 'm.db')}
+
+
+def ints(b):
+    if not isinstance(b, bytes) or len(b) < 4:
+        return []
+    n = struct.unpack('<I', b[:4])[0]
+    return list(struct.unpack(f'<{n}i', b[4:4 + 4 * n]))
 LANG = {}
 for c in dbs.values():
     for (t,) in c.execute("select name from sqlite_master where type='table' and name like '%\\_Lang' escape '\\'"):
@@ -82,7 +89,11 @@ for d in sorted(rows('o_t.db', 'RoleDress'), key=lambda d: d['id']):
     personal, cls = en(h['LangTitle']), en(h['LangHeroName'])
     hero = heroes.setdefault(h['id'], {
         'id': h['id'], 'name': personal or cls, 'title': cls if personal and cls != personal else '',
-        'quality': h['Quality'], 'defaultDress': h['DefaultDress'], 'icon': None, 'skins': []})
+        'quality': h['Quality'], 'defaultDress': h['DefaultDress'], 'icon': None, 'skins': [],
+        # In-game classification: Type 1 = hero, 2 = boss/monster/NPC; Post = class; JobDepartment = faction(s)
+        'category': 'hero' if h['Type'] == 1 else 'monster',
+        'class': h['Post'] or None,
+        'factions': ints(h['__BIN__JobDepartment'])})
     model_name = (model_res.get(d['ModelID']) or '')[:-7]   # strip ".prefab"
     skin = {
         'id': d['id'],
@@ -118,7 +129,26 @@ for hero in heroes.values():
     out.append(hero)
 out.sort(key=lambda h: h['name'].lower())
 
-json.dump({'heroes': out, 'models': models}, open(os.path.join(ROOT, 'heroes.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+# Names, icons and colours for the classification filters (only values that occur)
+o_t = dbs['o_t.db']
+CLASS_ICONS = {1: 'shouwei', 2: 'fuzhu', 3: 'cike', 4: 'zhanshi', 5: 'sheshou', 6: 'fashi'}       # Post.ImgJobIcon
+FACTION_ICONS = {101: 'yuansu', 102: 'buqu', 103: 'aoshu', 104: 'xianzhen', 105: 'bian', 106: 'mofa'}
+def ui_icon(name):
+    path = os.path.join(ROOT, 'images', 'ui', name)
+    return rel(path) if os.path.exists(path) else None
+used_classes = {h['class'] for h in out}
+used_factions = {f for h in out for f in h['factions']}
+used_rarities = {h['quality'] for h in out}
+taxonomy = {
+    'classes': [{'id': i, 'name': en(n), 'icon': ui_icon(f'class_{CLASS_ICONS.get(i)}.png')}
+                for i, n in o_t.execute('select id, LangPostName from Post order by id') if i in used_classes],
+    'factions': [{'id': i, 'name': en(n), 'icon': ui_icon(f'faction_{FACTION_ICONS.get(i)}_l.png')}
+                 for i, n in dbs['h_n.db'].execute('select id, LangName from JobDepartment order by id') if i in used_factions],
+    'rarities': [{'id': i, 'name': en(n), 'color': c}
+                 for i, n, c in o_t.execute('select id, LangName, DarkTextColor from Quality order by id') if i in used_rarities],
+}
+
+json.dump({'heroes': out, 'models': models, 'taxonomy': taxonomy}, open(os.path.join(ROOT, 'heroes.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
 n_skins = sum(len(h['skins']) for h in out)
 print(f"{len(out)} heroes, {n_skins} outfits: "
       f"{sum(bool(s['spine']) for h in out for s in h['skins'])} with Spine, "

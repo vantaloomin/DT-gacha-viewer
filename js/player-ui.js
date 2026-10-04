@@ -233,7 +233,7 @@ export function createExportDrawer() {
 
 // ---------- Video player ----------
 export function createVideoPlayer(container) {
-  const el = h(`<div class="vwrap"><div class="row-between v-top"><div class="v-switch"></div><a class="btn v-dl">${icon('download')}<span>Download WebM</span></a></div>
+  const el = h(`<div class="vwrap"><div class="row-between v-top"><div class="v-switch"></div><div class="v-opts"><span class="v-auto"></span><a class="btn v-dl">${icon('download')}<span>Download WebM</span></a></div></div>
     <div class="vplayer"><video playsinline loop preload="metadata"></video>
       <button class="big-play" aria-label="Play">${icon('play')}</button>
       <div class="vbar"><button class="btn icon ghost v-play" aria-label="Play or pause" data-kbd="Space">${icon('play')}</button>
@@ -247,11 +247,14 @@ export function createVideoPlayer(container) {
   scrub.style.flex = '1';
   el.querySelector('.v-scrub').append(scrub);
   let sources = [], current = 0, sw = null, idleTimer = 0;
+  // Auto-play is off by default; the choice is remembered
+  let autoplay = recall('videoAutoplay') === 'true';
+  el.querySelector('.v-auto').append(toggle({ label: 'Auto-play', checked: autoplay, onChange: on => { autoplay = on; store('videoAutoplay', on); } }));
 
-  const toggle = () => v.paused ? v.play() : v.pause();
-  el.querySelector('.big-play').onclick = toggle;
-  el.querySelector('.v-play').onclick = toggle;
-  v.onclick = toggle;
+  const togglePlay = () => v.paused ? v.play() : v.pause();
+  el.querySelector('.big-play').onclick = togglePlay;
+  el.querySelector('.v-play').onclick = togglePlay;
+  v.onclick = togglePlay;
   v.onplay = v.onpause = () => {
     player.classList.toggle('playing', !v.paused);
     el.querySelector('.v-play').innerHTML = icon(v.paused ? 'play' : 'pause');
@@ -272,7 +275,7 @@ export function createVideoPlayer(container) {
     player.classList.remove('playing');
     const a = el.querySelector('.v-dl'); a.href = s.src; a.download = s.download;
     scrub.setValue(0);
-    v.play().catch(() => {});   // autoplay allowed for muted video; otherwise the big play button shows
+    if (autoplay) v.play().catch(() => {});   // allowed for muted video; otherwise the big play button shows
   }
   return {
     el,
@@ -285,7 +288,7 @@ export function createVideoPlayer(container) {
       if (list.length) load(0);
     },
     stop() { v.pause(); },
-    toggle,
+    toggle: togglePlay,
     fullscreen: () => el.querySelector('.v-full').click(),
   };
 }

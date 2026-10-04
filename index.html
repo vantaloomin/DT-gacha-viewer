@@ -22,7 +22,9 @@
         <span style="display:flex;gap:2px"><button class="btn ghost icon" id="whatsNew" data-tip="What’s new in the last update" aria-label="What’s new" style="display:none;position:relative"></button>
         <button class="btn ghost icon" id="helpBtn" data-tip="Keyboard shortcuts" data-kbd="?" aria-label="Keyboard shortcuts"></button></span></div>
       <label class="field" id="searchField"><span class="s-ic"></span><input id="q" type="search" placeholder="Search heroes or outfits" autocomplete="off" aria-label="Search heroes"><kbd>/</kbd><button class="clear" type="button" aria-label="Clear search"></button></label>
-      <div id="filter"></div>
+      <div id="category"></div>
+      <div class="filter-bar"><button class="btn sm" id="filterBtn" aria-label="Filters"></button><span id="sortWrap"></span></div>
+      <div class="active-filters" id="activeFilters"></div>
     </div>
     <div class="side-list" id="heroes" role="listbox" aria-label="Heroes"></div>
     <div class="side-foot"><span id="count"></span><a href="viewer.html" id="allRigs"></a></div>
@@ -32,7 +34,7 @@
     <div class="head">
       <button class="btn ghost icon menu-toggle" id="menuBtn" aria-label="Show hero list"></button>
       <img class="portrait" id="portrait" alt="">
-      <div style="min-width:0"><h2 id="heroName">Loading…</h2><div class="sub" id="heroSub"></div></div>
+      <div style="min-width:0"><h2 id="heroName">Loading…</h2><div class="sub" id="heroSub"></div><div class="badges" id="heroBadges"></div></div>
     </div>
     <div class="outfits" id="outfits" role="tablist" aria-label="Outfits"></div>
     <div class="tabbar">
@@ -72,7 +74,7 @@
 </div>
 
 <script type="module">
-import { icon, h, esc, store, recall, dropdown, segmented, toggle, slider, swatches, toast, modal, lightbox, initTooltips, typing, anyLayerOpen, closePopovers } from './js/ui.js';
+import { icon, h, esc, store, recall, dropdown, segmented, toggle, slider, swatches, popover, toast, modal, lightbox, initTooltips, typing, anyLayerOpen, closePopovers } from './js/ui.js';
 import { SpineStage, layoutPhone } from './js/spine-stage.js';
 import { createDock, createExportDrawer, createVideoPlayer, groupClip, attachTaps, spineSettings, spineAnimItems } from './js/player-ui.js';
 import { voiceSettings, saveVoiceSettings, playVoice, stopVoice, setSoundEnabled } from './js/voice.js';
@@ -94,42 +96,127 @@ document.querySelectorAll('.tab').forEach(t => { const [ic, label] = TABS[t.data
 
 // ---------- Data ----------
 let heroes = [], models = {}, rigs = {};
-let hero = null, skin = null, tab = null, filter = recall('heroFilter', 'all'), visible = [];
+let hero = null, skin = null, tab = null, visible = [];
 const [data, manifest] = await Promise.all([
   fetch('heroes.json', { cache: 'no-cache' }).then(r => r.json()),
   fetch('manifest.json', { cache: 'no-cache' }).then(r => r.json()),
 ]).catch(e => { toast('Could not load the gallery data', { type: 'error', message: e.message, duration: 0 }); throw e; });
 heroes = data.heroes; models = data.models || {};
 const whatsNew = await fetch('whatsnew.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).catch(() => null);
-const newHeroIds = new Set([...(whatsNew?.newHeroes || []).map(x => x.hero), ...(whatsNew?.newOutfits || []).map(x => x.hero)]);
+// "New" markers last until seen: the badge until What's new is opened, a hero's tag until that hero is opened.
+// Keyed to this update, so the next update with changes shows them again.
+const wnKey = whatsNew ? `${whatsNew.date}|${whatsNew.gameVersion}` : '';
+const wnSeen = (() => { try { const v = JSON.parse(recall('whatsNewSeen', '{}')); return v.key === wnKey ? v : { key: wnKey, opened: false, heroes: [] }; } catch { return { key: wnKey, opened: false, heroes: [] }; } })();
+const saveSeen = () => store('whatsNewSeen', JSON.stringify(wnSeen));
+const newHeroIds = new Set([...(whatsNew?.newHeroes || []).map(x => x.hero), ...(whatsNew?.newOutfits || []).map(x => x.hero)].filter(id => !wnSeen.heroes.includes(id)));
 for (const r of manifest) rigs[r.skel] = r;
 const caps = s => ({ spine: !!s.spine, art: Object.keys(s.art).length > 0, video: Object.keys(s.videos).length > 0, model: !!s.model });
 const heroCaps = h => h.skins.reduce((a, s) => { const c = caps(s); for (const k in c) a[k] ||= c[k]; return a; }, {});
 const thumb = (src, name, cls = 'thumb') => src ? `<img class="${cls}" loading="lazy" src="${esc(src)}" alt="">` : `<span class="${cls} ph">${esc((name || '?')[0])}</span>`;
 
-// ---------- Sidebar ----------
-const filterSeg = segmented({ block: true, value: filter, label: 'Filter heroes', onChange: v => { filter = v; store('heroFilter', v); renderHeroes(); },
-  options: [{ value: 'all', label: 'All' }, { value: 'spine', label: 'Animated', tip: 'Heroes with animated art' }, { value: 'model', label: '3D', tip: 'Heroes with a 3D model' }, { value: 'video', label: 'Video', tip: 'Heroes with showcase videos' }] });
-$('#filter').append(filterSeg);
-const searchText = h => [h.name, h.title, ...h.skins.map(s => s.name)].join(' ').toLowerCase();
+// ---------- Sidebar: category, filters (the game's class / faction / rarity), sort ----------
+const tax = data.taxonomy || { classes: [], factions: [], rarities: [] };
+const byId = arr => Object.fromEntries(arr.map(x => [x.id, x]));
+const CLS = byId(tax.classes), FAC = byId(tax.factions), RAR = byId(tax.rarities);
+const HAS = { spine: ['Animated', 'sparkles'], model: ['3D model', 'box'], video: ['Videos', 'film'] };
+const F = Object.assign({ category: 'hero', classes: [], factions: [], rarities: [], has: [], sort: 'name' },
+  (() => { try { return JSON.parse(recall('heroFilters', '{}')) || {}; } catch { return {}; } })());
+const saveF = () => store('heroFilters', JSON.stringify(F));
+const activeCount = () => F.classes.length + F.factions.length + F.rarities.length + F.has.length;
+const rarityTag = q => RAR[q] ? `<span class="rtag" style="color:${esc(RAR[q].color)}">${esc(RAR[q].name)}</span>` : '';
+
+const catSeg = segmented({ block: true, value: F.category, label: 'Category',
+  options: [{ value: 'hero', label: 'Heroes', tip: `${heroes.filter(h => h.category === 'hero').length} playable heroes` },
+            { value: 'monster', label: 'Bosses & monsters', tip: `${heroes.filter(h => h.category === 'monster').length} bosses, monsters and NPCs` }],
+  onChange: v => { F.category = v; saveF(); renderHeroes(); } });
+$('#category').append(catSeg);
+const sortDd = dropdown({ prefix: 'Sort:', value: F.sort, onChange: v => { F.sort = v; saveF(); renderHeroes(); },
+  items: [{ value: 'name', label: 'Name' }, { value: 'rarity', label: 'Rarity' }, { value: 'class', label: 'Class' }] });
+$('#sortWrap').append(sortDd);
+
+function matches(h) {
+  return h.category === F.category
+    && (!F.classes.length || F.classes.includes(h.class))
+    && (!F.factions.length || h.factions.some(f => F.factions.includes(f)))
+    && (!F.rarities.length || F.rarities.includes(h.quality))
+    && F.has.every(k => heroCaps(h)[k]);
+}
+const SORTS = {
+  name: (a, b) => a.name.localeCompare(b.name),
+  rarity: (a, b) => b.quality - a.quality || a.name.localeCompare(b.name),
+  class: (a, b) => (a.class || 99) - (b.class || 99) || a.name.localeCompare(b.name),
+};
+const toggleIn = (arr, v) => { const i = arr.indexOf(v); i < 0 ? arr.push(v) : arr.splice(i, 1); };
+
+function renderActiveFilters() {
+  const box = $('#activeFilters'); box.innerHTML = '';
+  const chip = (label, img, onRemove, color) => {
+    const c = h(`<span class="afchip">${img ? `<img src="${esc(img)}" alt="">` : ''}<span${color ? ` style="color:${esc(color)}"` : ''}>${esc(label)}</span><button type="button" aria-label="Remove ${esc(label)} filter">${icon('x')}</button></span>`);
+    c.querySelector('button').onclick = () => { onRemove(); saveF(); renderHeroes(); };
+    box.append(c);
+  };
+  F.classes.forEach(id => chip(CLS[id]?.name || id, CLS[id]?.icon, () => toggleIn(F.classes, id)));
+  F.factions.forEach(id => chip(FAC[id]?.name || id, FAC[id]?.icon, () => toggleIn(F.factions, id)));
+  F.rarities.forEach(id => chip(RAR[id]?.name || id, null, () => toggleIn(F.rarities, id), RAR[id]?.color));
+  F.has.forEach(k => chip(HAS[k][0], null, () => toggleIn(F.has, k)));
+  if (activeCount()) {
+    const clear = h('<button type="button" class="afclear">Clear all</button>');
+    clear.onclick = () => { F.classes = []; F.factions = []; F.rarities = []; F.has = []; saveF(); renderHeroes(); };
+    box.append(clear);
+  }
+  box.style.display = activeCount() ? '' : 'none';
+  const n = activeCount();
+  $('#filterBtn').innerHTML = `${icon('sliders')}<span>Filters</span>${n ? `<span class="badge on">${n}</span>` : ''}`;
+}
+
+// Filter panel (popover): icon toggles for class and faction, chips for rarity and content
+popover($('#filterBtn'), () => {
+  const el = h(`<div class="fpop">
+    <div class="pop-row"><h4>Class</h4><div class="fgrid cls"></div></div>
+    <div class="pop-row"><h4>Faction</h4><div class="fgrid fac"></div></div>
+    <div class="pop-row"><h4>Rarity</h4><div class="fchips rar"></div></div>
+    <div class="pop-row"><h4>Has</h4><div class="fchips has"></div></div>
+    <div class="row-between fpop-foot"><span class="fcount"></span><button class="btn sm ghost fclear">Clear all</button></div></div>`);
+  const sync = () => {
+    el.querySelectorAll('[data-g]').forEach(b => b.setAttribute('aria-pressed', F[b.dataset.g].includes(b.dataset.g === 'has' ? b.dataset.v : +b.dataset.v)));
+    el.querySelector('.fcount').textContent = `${visible.length} match${visible.length === 1 ? '' : 'es'}`;
+  };
+  const add = (box, group, value, html, tip) => {
+    const b = h(`<button type="button" class="ftog" data-g="${group}" data-v="${esc(value)}"${tip ? ` data-tip="${esc(tip)}"` : ''}>${html}</button>`);
+    b.onclick = () => { toggleIn(F[group], group === 'has' ? value : +value); saveF(); renderHeroes(); sync(); };
+    el.querySelector(box).append(b);
+  };
+  for (const c of tax.classes) add('.cls', 'classes', c.id, `${c.icon ? `<img src="${esc(c.icon)}" alt="">` : ''}<span>${esc(c.name)}</span>`);
+  for (const f of tax.factions) add('.fac', 'factions', f.id, `${f.icon ? `<img src="${esc(f.icon)}" alt="">` : ''}<span>${esc(f.name)}</span>`, f.name);
+  for (const r of tax.rarities) add('.rar', 'rarities', r.id, `<span class="rdot" style="background:${esc(r.color)}"></span><span>${esc(r.name)}</span>`);
+  for (const [k, [label, ic]] of Object.entries(HAS)) add('.has', 'has', k, `${icon(ic)}<span>${esc(label)}</span>`);
+  el.querySelector('.fclear').onclick = () => { F.classes = []; F.factions = []; F.rarities = []; F.has = []; saveF(); renderHeroes(); sync(); };
+  sync();
+  return el;
+}, { prefer: 'below', align: 'start' });
+
+const searchText = h => [h.name, h.title, ...h.skins.map(s => s.name), CLS[h.class]?.name, RAR[h.quality]?.name, ...h.factions.map(f => FAC[f]?.name)].join(' ').toLowerCase();
 function renderHeroes() {
   const q = $('#q').value.trim().toLowerCase();
   $('#searchField').classList.toggle('has-value', !!q);
-  visible = heroes.filter(h => (!q || searchText(h).includes(q)) && (filter === 'all' || heroCaps(h)[filter]));
+  catSeg.value = F.category; sortDd.value = F.sort;
+  visible = heroes.filter(h => matches(h) && (!q || searchText(h).includes(q))).sort(SORTS[F.sort] || SORTS.name);
   const list = $('#heroes');
   list.innerHTML = '';
-  if (!visible.length) list.innerHTML = `<div class="list-empty">No heroes match${q ? ` “${esc(q)}”` : ''}.</div>`;
+  if (!visible.length) list.innerHTML = `<div class="list-empty">No ${F.category === 'hero' ? 'heroes' : 'bosses or monsters'} match${q ? ` “${esc(q)}”` : ''}${activeCount() ? ' with these filters' : ''}.</div>`;
   for (const h of visible) {
-    const c = heroCaps(h);
     const b = document.createElement('button');
     b.className = 'item' + (h === hero ? ' on' : ''); b.setAttribute('role', 'option'); b.setAttribute('aria-selected', h === hero);
-    b.dataset.tip = [h.name, h.title, h.skins.length > 1 ? `${h.skins.length} outfits` : ''].filter(Boolean).join(' · ');
+    b.dataset.tip = [h.name, h.title, RAR[h.quality]?.name, CLS[h.class]?.name, h.factions.map(f => FAC[f]?.name).filter(Boolean).join(' / '), h.skins.length > 1 ? `${h.skins.length} outfits` : ''].filter(Boolean).join(' · ');
+    const cls = CLS[h.class];
     b.innerHTML = `${thumb(h.icon, h.name)}<span class="meta"><div class="name">${esc(h.name)}${newHeroIds.has(h.id) ? '<span class="new-tag">new</span>' : ''}</div><div class="sub">${esc(h.title)}</div></span>
-      <span class="caps">${c.spine ? icon('sparkles') : ''}${c.model ? icon('box') : ''}${c.video ? icon('film') : ''}${h.skins.length > 1 ? `<span class="badge" data-tip="${h.skins.length} outfits">${h.skins.length}</span>` : ''}</span>`;
+      <span class="caps"><span class="c-rar">${rarityTag(h.quality)}</span><span class="c-cls">${cls?.icon ? `<img class="cicon" src="${esc(cls.icon)}" alt="${esc(cls.name)}">` : ''}</span><span class="c-n">${h.skins.length > 1 ? `<span class="badge">${h.skins.length}</span>` : ''}</span></span>`;
     b.onclick = () => { selectHero(h); $('#app').classList.remove('nav-open'); };
     list.append(b);
   }
-  $('#count').textContent = visible.length === heroes.length ? `${heroes.length} heroes` : `${visible.length} of ${heroes.length}`;
+  const total = heroes.filter(h => h.category === F.category).length, noun = F.category === 'hero' ? 'heroes' : 'bosses & monsters';
+  $('#count').textContent = visible.length === total ? `${total} ${noun}` : `${visible.length} of ${total} ${noun}`;
+  renderActiveFilters();
 }
 $('#q').oninput = renderHeroes;
 $('#q').addEventListener('keydown', e => { if (e.key === 'Escape') { $('#q').value = ''; renderHeroes(); $('#q').blur(); } if (e.key === 'Enter' && visible[0]) selectHero(visible[0]); });
@@ -139,11 +226,23 @@ $('#menuBtn').onclick = () => $('#app').classList.toggle('nav-open');
 // ---------- Selection & routing (#h=heroId&s=skinId&t=tab) ----------
 function selectHero(h, skinId, tabName) {
   hero = h;
+  if (newHeroIds.delete(h.id)) {
+    wnSeen.heroes.push(h.id); saveSeen();
+    document.querySelectorAll('#heroes .item').forEach((b, i) => visible[i] === h && b.querySelector('.new-tag')?.remove());
+  }
+  if (h.category !== F.category) { F.category = h.category; saveF(); renderHeroes(); }
   document.querySelectorAll('#heroes .item').forEach((b, i) => { const on = visible[i] === h; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); if (on) b.scrollIntoView({ block: 'nearest' }); });
   $('#portrait').src = h.icon || ''; $('#portrait').style.visibility = h.icon ? '' : 'hidden';
   $('#heroName').textContent = h.name;
   $('#heroSub').textContent = [h.title, `${h.skins.length} outfit${h.skins.length > 1 ? 's' : ''}`].filter(Boolean).join(' · ');
   document.title = `${h.name} · Hero Gallery`;
+  const cls = CLS[h.class];
+  $('#heroBadges').innerHTML = [
+    RAR[h.quality] ? `<span class="hb rar" style="color:${esc(RAR[h.quality].color)};border-color:${esc(RAR[h.quality].color)}55">${esc(RAR[h.quality].name)}</span>` : '',
+    cls ? `<span class="hb">${cls.icon ? `<img src="${esc(cls.icon)}" alt="">` : ''}${esc(cls.name)}</span>` : '',
+    ...h.factions.map(f => FAC[f] ? `<span class="hb">${FAC[f].icon ? `<img src="${esc(FAC[f].icon)}" alt="">` : ''}${esc(FAC[f].name)}</span>` : ''),
+    h.category === 'monster' ? '<span class="hb">Boss / monster</span>' : '',
+  ].join('');
   const box = $('#outfits'); box.innerHTML = '';
   for (const s of h.skins) {
     const c = caps(s);
@@ -153,11 +252,13 @@ function selectHero(h, skinId, tabName) {
     b.onclick = () => selectSkin(s);
     box.append(b);
   }
-  selectSkin(h.skins.find(s => s.id === skinId) || h.skins[0], tabName);
+  selectSkin(h.skins.find(s => s.id === skinId) || h.skins[0], tabName, false);
 }
 const h_ = h;
 
-function selectSkin(s, tabName) {
+// A new hero opens on Art (then 3D model, videos, animated); changing outfit keeps the current tab when it can
+const TAB_ORDER = ['art', 'model', 'video', 'spine'];
+function selectSkin(s, tabName, keepTab = true) {
   skin = s;
   document.querySelectorAll('.outfit').forEach(b => { const on = +b.dataset.id === s.id; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); if (on) b.scrollIntoView({ block: 'nearest', inline: 'nearest' }); });
   const c = caps(s);
@@ -166,7 +267,7 @@ function selectSkin(s, tabName) {
     t.dataset.tip = t.disabled ? `${TABS[t.dataset.tab][1]} — not available for this outfit` : TABS[t.dataset.tab][1];
   });
   spineStage.dispose(); spineLoaded = null; modelLoaded = null;
-  selectTab([tabName, tab, 'spine', 'art', 'video', 'model'].find(t => t && c[t]) || 'art');
+  selectTab([tabName, keepTab && tab, ...TAB_ORDER].find(t => t && c[t]) || 'art');
 }
 
 function selectTab(name) {
@@ -184,7 +285,8 @@ document.querySelectorAll('.tab').forEach(t => t.onclick = () => !t.disabled && 
 
 function route() {
   const p = new URLSearchParams(location.hash.slice(1));
-  const h = heroes.find(h => h.id === +p.get('h')) || hero || heroes[0];
+  // No hero in the link: open the first one in the (saved) sidebar list rather than the first overall
+  const h = heroes.find(h => h.id === +p.get('h')) || hero || visible[0] || heroes.find(x => x.category === F.category) || heroes[0];
   if (h !== hero) return selectHero(h, +p.get('s'), p.get('t'));
   const s = h.skins.find(s => s.id === +p.get('s'));
   if (s && s !== skin) return selectSkin(s, p.get('t'));
@@ -317,7 +419,7 @@ function showVideos() {
 
 // ---------- 3D model ----------
 let modelStage = null, modelLoaded = null, modelReady = false;
-const modelView = { lighting: recall('modelLighting', 'lit'), bg: recall('modelBg', '#1d1d23'), speed: 1, autoRotate: false };
+const modelView = { lighting: recall('modelLighting', 'lit'), bg: recall('modelBg', '#1d1d23'), speed: 1, autoRotate: false, autoplay: recall('modelAutoplay') === 'true' };
 const modelAdapter = {
   kind: 'model',
   ready: () => modelReady && !!modelStage?.model,
@@ -325,7 +427,7 @@ const modelAdapter = {
   pause: () => modelStage.pause(), resume: () => modelStage.resume(), seek: t => modelStage.seek(t),
   animations: () => modelStage.clipNames.map(c => ({ value: c, label: c, group: groupClip(c) })).sort((a, b) => a.group.localeCompare(b.group) || a.label.localeCompare(b.label)),
   current: () => modelStage.clipName,
-  setAnimation: n => { modelStage.play(n); modelDock.sync(); },
+  setAnimation: n => { modelStage.play(n); modelStage.resume(); modelDock.sync(); },   // picking a clip plays it
   settings: modelSettings,
   beginCapture: o => modelStage.beginCapture(o),
   aspect: () => { const c = modelStage.renderer.domElement; return c.width / c.height; },
@@ -338,7 +440,7 @@ function modelSettings() {
     <div class="pop-row"><h4>Lighting</h4><div class="lt"></div></div>
     <div class="pop-row"><h4>Background</h4><div class="bg"></div></div>
     <div class="pop-row"><h4>Speed</h4><div class="spd"></div></div>
-    <div class="pop-row ar"></div>
+    <div class="pop-row ar" style="display:grid;gap:10px"></div>
     <button class="btn reset" data-kbd="R">${icon('reset')}Reset camera</button></div>`);
   el.querySelector('.lt').append(segmented({ block: true, value: modelView.lighting, onChange: v => { modelView.lighting = v; store('modelLighting', v); modelStage.setLighting(v); },
     options: [{ value: 'lit', label: 'Lit' }, { value: 'toon', label: 'Toon', tip: 'Cel shading, closest to the game' }, { value: 'unlit', label: 'Unlit', tip: 'Flat texture colours' }] }));
@@ -346,6 +448,7 @@ function modelSettings() {
     options: [{ value: '#1d1d23', label: 'Dark' }, { value: '#3b3f4c', label: 'Slate' }, { value: '#8a8f9c', label: 'Grey' }, { value: '#ffffff', label: 'White' }, { value: '#00b140', label: 'Green screen' }] }));
   el.querySelector('.spd').append(segmented({ block: true, value: modelView.speed, onChange: v => { modelView.speed = v; modelStage.speed = v; },
     options: [0.25, 0.5, 1, 1.5, 2].map(v => ({ value: v, label: v + '×' })) }));
+  el.querySelector('.ar').append(toggle({ label: 'Auto-play animation', checked: modelView.autoplay, onChange: v => { modelView.autoplay = v; store('modelAutoplay', v); } }));
   el.querySelector('.ar').append(toggle({ label: 'Auto-rotate', checked: modelView.autoRotate, onChange: v => { modelView.autoRotate = v; modelStage.controls.autoRotate = v; } }));
   el.querySelector('.reset').onclick = () => { modelStage.frame(); closePopovers(); };
   return el;
@@ -369,6 +472,7 @@ async function showModel() {
   catch (e) { if (modelLoaded === skin.model) setLoading($('#modelLoading'), 'error', 'Couldn’t load this model: ' + e.message); return; }
   if (modelLoaded !== skin.model) return;
   modelStage.speed = modelView.speed; modelStage.controls.autoRotate = modelView.autoRotate;
+  modelView.autoplay ? modelStage.resume() : modelStage.pause();   // off by default: hold the idle pose until Play
   modelReady = true;
   setLoading($('#modelLoading'), null);
   modelDock.el.style.visibility = '';
@@ -385,12 +489,13 @@ function showWhatsNew() {
     ${sec('Outfits with new content', w.upgradedOutfits.map(x => link(x.hero, x.skin, `${x.name} (+${x.added.map(k => ({ spine: 'animation', model: '3D model', video: 'videos' })[k] || k).join(', ')})`)))}
     ${w.newHeroes.length + w.newOutfits.length + w.upgradedOutfits.length ? '' : '<p style="color:var(--muted)">Nothing new in the last update.</p>'}</div>`);
   const m = modal({ title: 'What’s new', body });
+  if (!wnSeen.opened) { wnSeen.opened = true; saveSeen(); $('#whatsNew .badge')?.remove(); }
   body.querySelectorAll('.wn-link').forEach(a => a.addEventListener('click', () => m.close()));
 }
 if (whatsNew) {
   const n = whatsNew.newHeroes.length + whatsNew.newOutfits.length + whatsNew.upgradedOutfits.length;
   $('#whatsNew').style.display = '';
-  $('#whatsNew').innerHTML = `${icon('sparkles')}${n ? `<span class="badge dot">${n > 99 ? '99+' : n}</span>` : ''}`;
+  $('#whatsNew').innerHTML = `${icon('sparkles')}${n && !wnSeen.opened ? `<span class="badge dot">${n > 99 ? '99+' : n}</span>` : ''}`;
   $('#whatsNew').onclick = () => showWhatsNew();
 }
 

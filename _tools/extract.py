@@ -11,6 +11,9 @@ PREFIXES = {
     'assets/res/gui/bigimage/herogacha/': 'images/herogacha/',
     'assets/res/gui/texture/icon/heroicon/': 'images/heroicon/',
     'assets/res/gui/bigimage/cardicon/': 'images/cardicon/',
+    # class and faction icons used by the gallery's filters
+    'assets/res/gui/texture/common/common_jobicon_': 'images/ui/class_',
+    'assets/res/gui/texture/common/common_jobdepartment_': 'images/ui/faction_',
 }
 # Optional command-line filter: only extract outputs under these prefixes, e.g. `python extract.py images/heroicon/`
 ONLY = [a for a in sys.argv[1:] if not a.startswith('--')]
