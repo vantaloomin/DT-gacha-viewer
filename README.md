@@ -1,4 +1,4 @@
-# Dragon Legends Viewer
+# DT Gacha Viewer
 
 A local viewer and exporter for the art in **Dragon Traveler**, built from your own copy of the
 PC (launcher, non-Steam) client. Browse every hero and outfit; play the animated Spine illustrations
@@ -24,21 +24,16 @@ game's publisher. This is a fan project for personal study, unaffiliated with th
 
 ## Setup
 
-Download the latest zip from [Releases](https://github.com/vantaloomin/dragon-legends-viewer/releases/latest)
+Download the latest zip from [Releases](https://github.com/vantaloomin/DT-gacha-viewer/releases/latest)
 (*Source code (zip)*) and unzip it anywhere, or clone the repository:
 
 ```bat
-git clone https://github.com/vantaloomin/dragon-legends-viewer.git
+git clone https://github.com/vantaloomin/DT-gacha-viewer.git
 ```
 
-Then, in that folder, install the Python dependencies:
-
-```bat
-pip install -r requirements.txt
-```
-
-Then double-click **`Update Gallery.bat`**. It finds the game folder automatically (or asks for it
-the first time), then extracts everything. The first run takes several minutes; later runs only
+Then double-click **`Update Gallery.bat`**. On the first run it checks for Python, installs the
+Python packages and offers to install FFmpeg with winget. It finds the game folder automatically (or
+asks for it the first time), then runs every extraction step in order. The first run takes several minutes; later runs only
 process files the game has changed, so after a game patch just run it again — the gallery's
 "What's new" button lists new heroes and outfits.
 
