@@ -24,9 +24,16 @@ game's publisher. This is a fan project for personal study, unaffiliated with th
 
 ## Setup
 
+Download the latest zip from [Releases](https://github.com/vantaloomin/dragon-legends-viewer/releases/latest)
+(*Source code (zip)*) and unzip it anywhere, or clone the repository:
+
 ```bat
 git clone https://github.com/vantaloomin/dragon-legends-viewer.git
-cd dragon-legends-viewer
+```
+
+Then, in that folder, install the Python dependencies:
+
+```bat
 pip install -r requirements.txt
 ```
 
