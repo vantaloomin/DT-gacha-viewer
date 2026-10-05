@@ -108,3 +108,9 @@ the Spine Runtimes License), [three.js](https://threejs.org/) (MIT),
 [gifenc](https://github.com/mattdesl/gifenc) (MIT), [webm-muxer](https://github.com/Vanilagy/webm-muxer) (MIT),
 [JSZip](https://stuk.github.io/jszip/) (MIT/GPLv3) and the [Inter](https://rsms.me/inter/) font (OFL).
 Python dependencies: [UnityPy](https://github.com/K0lb3/UnityPy), NumPy, Pillow.
+
+## License
+
+The code in this repository is released under the [MIT License](LICENSE). It covers only this
+project's own code — not Dragon Traveler's art, audio, models, names or trademarks, which belong to
+the game's publisher, and not the third-party libraries above, which keep their own licences.
