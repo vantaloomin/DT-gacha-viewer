@@ -64,14 +64,22 @@ function place(el, anchor, { gap = 6, align = 'start', prefer = 'below' } = {}) 
 }
 
 // Only one floating layer (menu/popover) open at a time; closes on outside click / Escape.
-let openLayer = null;
-function closeLayer() { if (openLayer) { const l = openLayer; openLayer = null; l.close(); } }
+// Open menus and popovers, as a stack: a dropdown inside a popover opens on top of it instead of closing it.
+const layers = [];
+const topLayer = () => layers[layers.length - 1];
+function closeLayer() { layers.pop()?.close(); }
+function closeAllLayers() { while (layers.length) closeLayer(); }
+function pushLayer(layer) {
+  // keep only the layers this one opens from (its anchor sits inside them)
+  while (layers.length && !topLayer().el.contains(layer.anchor)) closeLayer();
+  layers.push(layer);
+}
 document.addEventListener('pointerdown', e => {
-  if (openLayer && !openLayer.el.contains(e.target) && !openLayer.anchor.contains(e.target)) closeLayer();
+  while (layers.length && !topLayer().el.contains(e.target) && !topLayer().anchor.contains(e.target)) closeLayer();
 }, true);
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && openLayer) { e.stopPropagation(); const a = openLayer.anchor; closeLayer(); a.focus(); } }, true);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && layers.length) { e.stopPropagation(); const a = topLayer().anchor; closeLayer(); a.focus(); } }, true);
 addEventListener('resize', closeLayer);
-export const anyLayerOpen = () => !!openLayer;
+export const anyLayerOpen = () => layers.length > 0;
 
 // ---------- Dropdown ----------
 /**
@@ -120,10 +128,10 @@ export function dropdown({ items = [], value, onChange, searchable = false, pref
     place(menu, btn, { prefer, align });
     btn.setAttribute('aria-expanded', 'true');
     (input || opts()[active] || menu).focus();
-    openLayer = { el: menu, anchor: btn, close: () => { menu.remove(); btn.setAttribute('aria-expanded', 'false'); } };
+    pushLayer({ el: menu, anchor: btn, close: () => { menu.remove(); btn.setAttribute('aria-expanded', 'false'); } });
   }
-  btn.onclick = () => { const wasMine = openLayer?.anchor === btn; closeLayer(); if (!wasMine) open(); };
-  btn.addEventListener('keydown', e => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (openLayer?.anchor !== btn) open(); } });
+  btn.onclick = () => { if (topLayer()?.anchor === btn) closeLayer(); else open(); };
+  btn.addEventListener('keydown', e => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (topLayer()?.anchor !== btn) open(); } });
   Object.defineProperty(btn, 'value', { get: () => current, set: v => { current = v; render(); } });
   btn.setItems = (newItems, v = current) => { list = newItems; current = v; render(); };
   btn.setSearchable = v => { searchable = v; };
@@ -188,18 +196,16 @@ export function swatches({ options, value, onChange }) {
 export function popover(anchor, build, { prefer = 'below', align = 'end' } = {}) {
   anchor.setAttribute('aria-haspopup', 'dialog');
   anchor.addEventListener('click', () => {
-    const wasMine = openLayer?.anchor === anchor;
-    closeLayer();
-    if (wasMine) return;
+    if (topLayer()?.anchor === anchor) { closeLayer(); return; }
     const el = h('<div class="pop" role="dialog"></div>');
     el.append(build());
     document.body.append(el);
     place(el, anchor, { prefer, align });
     anchor.setAttribute('aria-expanded', 'true');
-    openLayer = { el, anchor, close: () => { el.remove(); anchor.setAttribute('aria-expanded', 'false'); } };
+    pushLayer({ el, anchor, close: () => { el.remove(); anchor.setAttribute('aria-expanded', 'false'); } });
   });
 }
-export const closePopovers = closeLayer;
+export const closePopovers = closeAllLayers;
 
 // ---------- Tooltips (any element with data-tip; optional data-kbd shortcut) ----------
 let tipEl = null, tipFor = null, tipTimer = 0;
@@ -212,7 +218,7 @@ export function initTooltips() {
     if (!t || !t.dataset.tip) return;
     tipFor = t;
     tipTimer = setTimeout(() => {
-      if (!t.isConnected || openLayer?.anchor === t) return;
+      if (!t.isConnected || layers.some(l => l.anchor === t)) return;
       tipEl = h(`<div class="tip" role="tooltip">${esc(t.dataset.tip)}${t.dataset.kbd ? `<kbd>${esc(t.dataset.kbd)}</kbd>` : ''}</div>`);
       document.body.append(tipEl);
       const r = t.getBoundingClientRect(), w = tipEl.offsetWidth, ht = tipEl.offsetHeight;
