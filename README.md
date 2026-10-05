@@ -1,8 +1,8 @@
 # DT Gacha Viewer
 
 A local viewer and exporter for the art in **Dragon Traveler**, built from your own copy of the
-PC (launcher, non-Steam) client. Browse every hero and outfit; play the animated Spine illustrations
-the way the game shows them (fixed phone screen, tap reactions, voice lines); look at portraits,
+PC client (the Steam version or the standalone launcher version). Browse every hero and outfit;
+play the animated Spine illustrations the way the game shows them (fixed phone screen, tap reactions, voice lines); look at portraits,
 cards and backgrounds; watch the showcase videos; inspect the 3D battle models with all their
 animations; and export stills, animated WebP/GIF, WebM or PNG frames.
 
@@ -13,15 +13,18 @@ game's publisher. This is a fan project for personal study, unaffiliated with th
 
 ## Requirements
 
-- Windows with the Dragon Traveler PC client installed (the launcher version; the folder that
-  contains `DragonTraveler.exe` and `DragonTraveler_Data`, usually `...\DragonTraveler\client`).
-  Start the game once and let it finish downloading updates, so the patch files are present.
+- Windows with the Dragon Traveler PC client installed: the **Steam** version
+  (`...\steamapps\common\Dragon Traveler`) or the standalone **launcher** version (usually
+  `...\DragonTraveler\client`). Both are found automatically; it's the folder that contains
+  `DragonTraveler_Data`. Start the game once and let it finish downloading updates, so the patch
+  files are present.
 - Python 3.10+ and FFmpeg — **nothing to install**: if they aren't on PATH, `Update Gallery.bat`
   offers to download portable copies (the official Python embeddable zip and a static FFmpeg build)
   into a `runtime` folder next to the gallery. No installers, admin rights, winget or MSIX packages;
-  delete `runtime` to remove them. It needs about 300 MB, and the `curl` and `tar` commands that
-  come with Windows 10 and 11. If you already have [Python](https://www.python.org/) 3.10+ and
-  [FFmpeg](https://ffmpeg.org/) (built with libopus and libvpx) on PATH, those are used instead.
+  delete `runtime` to remove them. It needs about 300 MB, and uses the `curl` and `tar` commands
+  that come with Windows 10 and 11, or Windows PowerShell where those have been removed. If you
+  already have [Python](https://www.python.org/) 3.10+ and [FFmpeg](https://ffmpeg.org/) (built with
+  libopus and libvpx) on PATH, those are used instead.
 - Chrome or Edge for the viewer (it uses WebGL and WebCodecs).
 - About 6 GB of free disk space for the extracted content.
 

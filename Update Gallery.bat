@@ -33,8 +33,8 @@ if not "%DT_ASSUME_YES%"=="1" (
 call :need_tools || goto :fail
 if not exist "%RT%\python" mkdir "%RT%\python"
 echo Downloading Python %PY_VER%...
-curl -L --fail --progress-bar -o "%RT%\python.zip" "%PY_URL%" || goto :dlfail
-tar -xf "%RT%\python.zip" -C "%RT%\python" || goto :dlfail
+call :fetch "%PY_URL%" "%RT%\python.zip" || goto :dlfail
+call :unzip "%RT%\python.zip" "%RT%\python" || goto :dlfail
 del "%RT%\python.zip"
 rem The embeddable Python ignores site-packages and the script's own folder unless its ._pth file lists them.
 (
@@ -43,15 +43,16 @@ rem The embeddable Python ignores site-packages and the script's own folder unle
     echo ..\..\_tools
     echo import site
 ) > "%RT%\python\python%PY_TAG%._pth"
+rem keep the portable copy self-contained: ignore packages from a per-user Python install
+set "PYTHONNOUSERSITE=1"
 echo Setting up pip...
-curl -L --fail --progress-bar -o "%RT%\python\get-pip.py" "%PIP_URL%" || goto :dlfail
+call :fetch "%PIP_URL%" "%RT%\python\get-pip.py" || goto :dlfail
 "%RT%\python\python.exe" "%RT%\python\get-pip.py" --no-warn-script-location -q || goto :pipfail
 rem Some packages ship only as source. pip can't build them in an isolated environment inside the
 rem embeddable Python (its ._pth file hides that environment), so give it setuptools and build in place.
 "%RT%\python\python.exe" -m pip install -q --no-warn-script-location setuptools wheel || goto :pipfail
 del "%RT%\python\get-pip.py"
 set "PY=%RT%\python\python.exe"
-set "PYTHONNOUSERSITE=1"
 echo.
 
 :packages
@@ -77,10 +78,11 @@ if not "%DT_ASSUME_YES%"=="1" (
 )
 call :need_tools || goto :fail
 echo Downloading FFmpeg...
-curl -L --fail --progress-bar -o "%RT%\ffmpeg.zip" "%FF_URL%" || goto :dlfail
+call :fetch "%FF_URL%" "%RT%\ffmpeg.zip" || goto :dlfail
 if exist "%RT%\ffmpeg-tmp" rmdir /s /q "%RT%\ffmpeg-tmp"
 mkdir "%RT%\ffmpeg-tmp"
-tar -xf "%RT%\ffmpeg.zip" -C "%RT%\ffmpeg-tmp" || goto :dlfail
+echo Unpacking...
+call :unzip "%RT%\ffmpeg.zip" "%RT%\ffmpeg-tmp" || goto :dlfail
 del "%RT%\ffmpeg.zip"
 if not exist "%RT%\ffmpeg" mkdir "%RT%\ffmpeg"
 rem Only ffmpeg.exe is needed (the zip also has ffprobe and ffplay, another 330 MB)
@@ -106,10 +108,42 @@ endlocal
 exit /b 0
 
 :need_tools
-rem curl and tar come with Windows 10 (1803) and later
-where curl >nul 2>&1 && where tar >nul 2>&1 && exit /b 0
-echo This needs the curl and tar commands that come with Windows 10 and 11, and they weren't found.
+rem Downloads and unzips with curl and tar (part of Windows 10 1803+ and 11). Some trimmed-down Windows
+rem builds remove them, so fall back to Windows PowerShell's Invoke-WebRequest and Expand-Archive.
+set "CURL=" & set "TAR=" & set "PSH="
+if exist "%SystemRoot%\System32\curl.exe" set "CURL=%SystemRoot%\System32\curl.exe"
+if not defined CURL for /f "delims=" %%x in ('where curl 2^>nul') do if not defined CURL set "CURL=%%x"
+if exist "%SystemRoot%\System32\tar.exe" set "TAR=%SystemRoot%\System32\tar.exe"
+if not defined TAR for /f "delims=" %%x in ('where tar 2^>nul') do if not defined TAR set "TAR=%%x"
+if exist "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" set "PSH=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+if not defined PSH for /f "delims=" %%x in ('where pwsh powershell 2^>nul') do if not defined PSH set "PSH=%%x"
+if defined PSH exit /b 0
+if defined CURL if defined TAR exit /b 0
+echo Downloading needs either the curl and tar commands or Windows PowerShell, and neither was found.
+echo Install Python and FFmpeg yourself instead - see below.
 exit /b 1
+
+:fetch
+rem :fetch url file
+if defined CURL (
+    "%CURL%" -L --fail --progress-bar -o "%~2" "%~1"
+    exit /b
+)
+set "DL_URL=%~1"
+set "DL_OUT=%~2"
+"%PSH%" -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference = 'SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -UseBasicParsing -Uri $env:DL_URL -OutFile $env:DL_OUT } catch { Write-Host $_; exit 1 }"
+exit /b
+
+:unzip
+rem :unzip file.zip folder
+if defined TAR (
+    "%TAR%" -xf "%~1" -C "%~2"
+    exit /b
+)
+set "UZ_ZIP=%~1"
+set "UZ_DIR=%~2"
+"%PSH%" -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference = 'SilentlyContinue'; try { Expand-Archive -Force -LiteralPath $env:UZ_ZIP -DestinationPath $env:UZ_DIR } catch { Write-Host $_; exit 1 }"
+exit /b
 
 :nopython
 echo Install Python 3.10 or newer from https://www.python.org/downloads/windows/ (the "Windows installer
