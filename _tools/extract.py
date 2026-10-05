@@ -11,6 +11,8 @@ PREFIXES = {
     'assets/res/gui/bigimage/herogacha/': 'images/herogacha/',
     'assets/res/gui/texture/icon/heroicon/': 'images/heroicon/',
     'assets/res/gui/bigimage/cardicon/': 'images/cardicon/',
+    # goddess room backgrounds and the collectible props drawn over them
+    'assets/res/gui/bigimage/goddess/': 'images/goddess/',
     # class and faction icons used by the gallery's filters
     'assets/res/gui/texture/common/common_jobicon_': 'images/ui/class_',
     'assets/res/gui/texture/common/common_jobdepartment_': 'images/ui/faction_',
@@ -94,7 +96,8 @@ def fix_atlas_pages(root=OUT):
     fixed = []
     for atlas in glob.glob(os.path.join(root, 'spine*', '**', '*.atlas'), recursive=True):
         text = open(atlas, encoding='utf-8', errors='replace').read().replace('\r', '')
-        for m in re.finditer(r'^(\S[^\n]*\.png)\n\s*size: (\d+), ?(\d+)', text, re.M):
+        # 'size: w, h' (older atlas format) or 'size:w,h' (Spine 4.1)
+        for m in re.finditer(r'^(\S[^\n]*\.png)\n\s*size: ?(\d+), ?(\d+)', text, re.M):
             page = os.path.join(os.path.dirname(atlas), m.group(1).strip())
             want = (int(m.group(2)), int(m.group(3)))
             if not os.path.exists(page):

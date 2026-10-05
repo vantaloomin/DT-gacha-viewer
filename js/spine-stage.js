@@ -8,6 +8,22 @@
 //    every other animation starts from birth's final pose.
 //  - Animations switch with a hard cut: crossfades blend whole scenes together on multi-scene rigs.
 
+// The game's textures are straight alpha (not premultiplied), and Unity's Spine shader premultiplies them as
+// it draws. The web runtime in straight-alpha mode doesn't, so multiply/screen slots brighten everything
+// under their transparent areas (white faces, pale rectangles). Do what Unity does: premultiply each texture
+// as it's uploaded to the GPU, and render in premultiplied mode.
+const GLT = spine.GLTexture;
+if (GLT && !GLT.prototype.premultiplyPatched) {
+  const update = GLT.prototype.update;
+  GLT.prototype.update = function (useMipMaps) {
+    const gl = this.context.gl;
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, !!GLT.premultiplyOnUpload);
+    update.call(this, useMipMaps);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  };
+  GLT.prototype.premultiplyPatched = true;
+}
+
 export const SCREEN = { x: -1170, y: -540, w: 2340, h: 1080 };
 export const ASPECT = SCREEN.w / SCREEN.h;
 
@@ -45,36 +61,55 @@ export class SpineStage {
     this.inter = null;           // interactions.json entry for the rig
     this.restricted = false;     // the game's restricted layer: uncensored skin, extra motion, restricted acts
     this.onAct = null;           // (actId, animationNames) => void, e.g. to play voice lines
+    this.layered = null;         // rooms.json entry: composite skins, "pre" animations, goddess room background
+    this.showRoom = true;        // draw the room background behind a goddess (and into exports)
+    this.roomImg = null;
   }
 
   /**
-   * rig: { skel, atlas, pma, skin?, group? }; interaction: optional interactions.json entry.
-   * Resolves once loaded. Starts in interactive mode when the rig has a default act.
+   * rig: { skel, atlas, pma, skin?, group? }; interaction: optional interactions.json entry;
+   * layered: optional rooms.json entry. Resolves once loaded. Starts in interactive mode when the rig has a
+   * default act.
    */
-  load(rig, interaction = null) {
+  load(rig, interaction = null, layered = null) {
     this.dispose();
     this.rig = rig;
+    this.layered = layered ? { ...layered, chosen: Object.fromEntries((layered.skins || []).filter(n => n.includes('/')).map(n => [n.split('/')[0], n])) } : null;
+    if (this.layered?.room) {
+      // The room background sits under the (transparent) WebGL canvas; #placeRoom positions it every frame.
+      const img = this.roomImg = new Image();
+      img.src = this.layered.room.bg;
+      img.alt = '';
+      img.style.cssText = 'position:absolute;max-width:none;pointer-events:none;user-select:none';
+      img.style.display = this.showRoom ? '' : 'none';
+      this.screen.append(img);
+    }
     this.inter = interaction?.defaultAct ? { ...interaction, act: null, elapsed: 0, onceDur: 0 } : null;
     const host = document.createElement('div');
     host.style.cssText = 'position:absolute;inset:0';
     this.screen.append(host);
     this.host = host;
+    if (GLT) GLT.premultiplyOnUpload = !rig.pma;   // already-premultiplied textures (atlas says pma) stay as they are
     return new Promise((resolve, reject) => {
       this.player = new spine.SpinePlayer(host, {
         skelUrl: rig.skel, atlasUrl: rig.atlas,
-        premultipliedAlpha: !!rig.pma,
+        premultipliedAlpha: true,   // straight-alpha textures are premultiplied on upload (see the top of this file)
         alpha: true,
-        backgroundColor: '#000000ff',
+        backgroundColor: this.layered?.room && this.showRoom ? '#00000000' : '#000000ff',
         showControls: false,  // the page provides its own playback controls
         showLoading: false,
         defaultMix: 0,
-        frame: (p, delta) => { this.#tick(delta); this.#applyCamera(p); },   // every frame, before the camera is positioned
+        frame: (p, delta) => { this.#tick(delta); this.#applyCamera(p); this.#placeRoom(); },   // every frame, before the camera is positioned
         success: p => { try {
           const data = p.skeleton.data;
-          // The game's configured default skin, else the first non-empty one.
-          const skin = this.#skinFor(rig) || data.skins.find(s => s.name !== 'default')?.name || 'default';
-          p.skeleton.setSkinByName(skin); p.skeleton.setSlotsToSetupPose();
-          const first = this.animations.find(a => /idle/i.test(a)) || this.animations[0];
+          if (this.layered?.skins?.length) this.#setComposite();
+          else {
+            // The game's configured default skin, else the first non-empty one.
+            const skin = this.#skinFor(rig) || data.skins.find(s => s.name !== 'default')?.name || 'default';
+            p.skeleton.setSkinByName(skin); p.skeleton.setSlotsToSetupPose();
+          }
+          const first = (this.layered?.anim && data.findAnimation(this.layered.anim) ? this.layered.anim : null) ||
+            this.animations.find(a => /idle/i.test(a)) || this.animations[0];
           // play() starts the skeleton's first animation unless config.animation is set, so set it first.
           if (first) p.config.animation = first;
           p.play();
@@ -91,6 +126,23 @@ export class SpineStage {
   get animations() { return this.player?.skeleton?.data.animations.map(a => a.name) || []; }
   get skins() { return this.player?.skeleton?.data.skins.map(s => s.name) || []; }
   get skin() { return this.player?.skeleton?.skin?.name || 'default'; }
+
+  /** Layered rigs: the game's per-part skin choices, e.g. { hair: ['hair/lvfa', 'hair/huangfa'] }. */
+  get skinParts() { return this.layered?.skinOptions || {}; }
+  partSkin(part) { return this.layered?.chosen[part]; }
+  setPart(part, skin) {
+    if (!this.layered) return;
+    this.layered.chosen[part] = skin;
+    this.#setComposite();
+    if (this.anim) this.play(this.anim);
+  }
+
+  get hasRoom() { return !!this.roomImg; }
+  set roomVisible(on) {
+    this.showRoom = on;
+    if (this.roomImg) this.roomImg.style.display = on ? '' : 'none';
+    this.player?.bg.set(0, 0, 0, on && this.roomImg ? 0 : 1);
+  }
 
   setSkin(name) {
     const s = this.player.skeleton;
@@ -144,6 +196,37 @@ export class SpineStage {
     this.#enterAct(this.inter.clicks.find(c => c.id === z.id).act);
     if (this.player.paused) this.player.play();
     return true;
+  }
+
+  // The game combines the base skin with one skin per part (hair, horns, throne...) at the same time.
+  #setComposite() {
+    const sk = this.player.skeleton, d = sk.data, comp = new spine.Skin('composite');
+    for (const n of [this.layered.skins[0], ...Object.values(this.layered.chosen)]) { const s = n && d.findSkin(n); if (s) comp.addSkin(s); }
+    sk.setSkin(comp); sk.setSlotsToSetupPose();
+  }
+
+  // The room background in skeleton coordinates (see _tools/build_rooms.py for the placement).
+  #roomRect() {
+    const r = this.layered.room, w = r.size[0] / r.unitPx, h = r.size[1] / r.unitPx;
+    return { x: -r.origin[0] * w, y: -r.origin[1] * h, w, h };
+  }
+
+  // Like the game on a phone: the room fills the screen's width; vertically it's centred on the goddess.
+  #roomCamera() {
+    const bg = this.#roomRect(), w = bg.w, h = w / ASPECT;
+    const b = this.#animBounds(this.anim), cy = isFinite(b.y) ? b.y + b.h / 2 : bg.y + bg.h / 2;
+    const y = Math.min(Math.max(cy - h / 2, bg.y), bg.y + bg.h - h);
+    return { x: bg.x, y, w, h };
+  }
+
+  #placeRoom() {
+    const img = this.roomImg, r = this.exportRect || this.camRect;
+    if (!img || !r || !this.showRoom) return;
+    const s = this.screen.clientWidth / r.w, bg = this.#roomRect();
+    const pos = [(bg.x - r.x) * s, (r.y + r.h - bg.y - bg.h) * s, bg.w * s, bg.h * s].map(v => v.toFixed(1) + 'px');
+    if (img.dataset.pos === pos.join()) return;
+    img.dataset.pos = pos.join();
+    Object.assign(img.style, { left: pos[0], top: pos[1], width: pos[2], height: pos[3] });
   }
 
   #skinFor(rig) {
@@ -245,6 +328,10 @@ export class SpineStage {
           state.apply(skel); skel.updateWorldTransform();
         }
         p.drawFrame(false);               // render into the WebGL canvas…
+        if (this.roomImg && this.showRoom && this.roomImg.complete) {   // the room behind the goddess
+          const s = W / r.w, bg = this.#roomRect();
+          ctx.drawImage(this.roomImg, (bg.x - r.x) * s, (r.y + r.h - bg.y - bg.h) * s, bg.w * s, bg.h * s);
+        }
         ctx.drawImage(canvas, 0, 0);      // …and copy before the browser presents/clears it
       },
       done: () => {
@@ -261,6 +348,7 @@ export class SpineStage {
   dispose() {
     if (this.player) { this.player.dispose(); this.player = null; }
     this.host?.remove(); this.host = null;
+    this.roomImg?.remove(); this.roomImg = null;
     this.camRect = null; this.anim = null;
   }
 
@@ -271,11 +359,13 @@ export class SpineStage {
     skel.setToSetupPose();
     if (birth && name !== 'birth')
       birth.apply(skel, birth.duration, birth.duration, false, [], 1, spine.MixBlend.setup, spine.MixDirection.mixIn);
+    this.#applyPre(skel, name);
     if (name) state.setAnimation(0, name, true).mixDuration = 0;
     p.playTime = 0;
   }
 
   #cameraFor() {
+    if (this.camMode === 'screen' && this.layered?.room) return this.#roomCamera();
     const d = this.player.skeleton.data;
     const authoredForScreen = this.rig.group === 'spine/hero' ||
       (Math.abs(d.width - SCREEN.w) < 4 && Math.abs(d.height - SCREEN.h) < 4 && Math.abs(d.x - SCREEN.x) < 4 && Math.abs(d.y - SCREEN.y) < 4) ||
@@ -300,6 +390,12 @@ export class SpineStage {
     p.previousViewport = null;   // no animated viewport transitions
   }
 
+  // Layered rigs: the zero-length "pre" animation the game applies before a loop switches on its attachments.
+  #applyPre(skel, name) {
+    const pre = name && this.layered?.pre?.[name] && skel.data.findAnimation(this.layered.pre[name]);
+    if (pre) pre.apply(skel, pre.duration, pre.duration, false, [], 1, spine.MixBlend.setup, spine.MixDirection.mixIn);
+  }
+
   // Everything an animation draws over its duration, starting from the same pose #startClean uses.
   #animBounds(name) {
     const skel = this.player.skeleton, anim = skel.data.findAnimation(name), birth = skel.data.findAnimation('birth');
@@ -309,6 +405,7 @@ export class SpineStage {
       const t = anim.duration * i / steps;
       skel.setToSetupPose();
       if (birth && anim !== birth) birth.apply(skel, birth.duration, birth.duration, false, [], 1, spine.MixBlend.setup, spine.MixDirection.mixIn);
+      this.#applyPre(skel, name);
       anim.apply(skel, t, t, false, [], 1, spine.MixBlend.setup, spine.MixDirection.mixIn);
       skel.updateWorldTransform(); skel.getBounds(o, z, []);
       if (!isFinite(o.x) || !isFinite(z.x)) continue;

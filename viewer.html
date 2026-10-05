@@ -61,9 +61,10 @@ stage.restricted = recall('restricted') === 'true';
 let rigs = [], current = null, visible = [], ready = false, group = recall('rigGroup', 'spine/ui');
 let phoneZoom = +recall('phoneZoom', 100);
 
-const [m, interactions] = await Promise.all([
+const [m, interactions, rooms] = await Promise.all([
   fetch('manifest.json', { cache: 'no-cache' }).then(r => r.json()),
   fetch('interactions.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : {}).catch(() => ({})),
+  fetch('rooms.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : {}).catch(() => ({})),
 ]);
 rigs = m.sort((a, b) => (!a.title - !b.title) || label(a).localeCompare(label(b)));
 const seen = {};
@@ -141,7 +142,8 @@ async function open(r) {
   dock.el.style.visibility = 'hidden';
   stage.camMode = recall('camMode', 'screen');
   stopVoice();
-  try { await stage.load(r, interactions[r.skel]); } catch (e) { if (current === r) setLoading('error', 'Couldn’t load this rig: ' + e.message); return; }
+  stage.showRoom = recall('showRoom') !== 'false';
+  try { await stage.load(r, interactions[r.skel], rooms[r.skel]); } catch (e) { if (current === r) setLoading('error', 'Couldn’t load this rig: ' + e.message); return; }
   if (current !== r) return;
   ready = true;
   setLoading(null);

@@ -9,6 +9,7 @@ Steps (each is its own script in this folder and can be run alone):
   extract_audio.py       voice/sound banks -> Ogg (incremental; optional)
   export_models.py       3D battle models -> glTF
   build_interactions.py  tap zones, reactions and voice cue ids
+  build_rooms.py         goddess rooms: layered skins, pre-animations, backgrounds
   build_heroes.py        heroes.json for the gallery
   vendor.py              local copies of the web libraries (only fetches missing files)
 Then compares heroes.json before/after and writes whatsnew.json (shown in the gallery).
@@ -33,6 +34,7 @@ STEPS = [
     ('Extracting voice lines and sounds', 'extract_audio.py', False),
     ('Converting 3D models', 'export_models.py', True),
     ('Building tap interactions', 'build_interactions.py', True),
+    ('Building goddess rooms', 'build_rooms.py', True),
     ('Building hero list', 'build_heroes.py', True),
     ('Checking local web libraries', 'vendor.py', False),
 ]

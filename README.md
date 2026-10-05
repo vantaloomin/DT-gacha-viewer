@@ -84,6 +84,7 @@ the `_tools` folder):
 | `extract_audio.py` | CRI ADX2 `.acb`/`.awb` banks → Ogg Opus, with its own HCA decoder (FFmpeg's doesn't decode this game's HCA v3 audio correctly). |
 | `export_models.py` | Unity skinned meshes, Avatar skeletons and Mecanim animation clips → glTF `.glb`. |
 | `build_interactions.py` | The game's tap state machine (`SpineRole`, `SpineRoleClick`, `SpineRoleAct`) and voice cue ids. |
+| `build_rooms.py` | Goddess rooms: the skins the game layers together, the "pre" animation each idle needs, and the room background and where the goddess sits in it (`SpineRoleEx`, `GoddessRoom`). |
 | `build_heroes.py` | `heroes.json`: every hero, outfit, rig, image, video, model and voice. |
 | `vendor.py` | Downloads pinned copies of the web libraries into `vendor/`. |
 
@@ -95,6 +96,11 @@ Notes on matching the game's rendering:
   loops start from `birth`'s final pose, and animation changes are hard cuts (crossfading blends the
   separate scenes of multi-scene outfits together).
 - Tap areas in `SpineRoleClick` are `x_y_w_h`: centre and size in skeleton units.
+- The game's Spine textures are straight alpha and Unity premultiplies them while drawing; the viewer does the
+  same on upload, otherwise multiply/screen slots brighten whatever is behind them.
+- Goddess rooms combine several skins at once (a base plus one per part: hair, horns, throne...) and apply a
+  zero-length `preidleN` animation before each `idleN`. The room background is scaled to the 1080-unit screen
+  height with the skeleton origin at `GoddessRoom.Offset`.
 
 ## Third-party libraries
 

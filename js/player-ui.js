@@ -374,7 +374,17 @@ export function spineSettings(stage, opts) {
     box.append(row, toggle({ label: 'Greet when an outfit opens', checked: vs.greet, onChange: v => { vs.greet = v; opts.voice.save(); } }));
   } else el.querySelector('.voice-row').remove();
 
-  if (stage.skins.length > 1) {
+  const parts = Object.entries(stage.skinParts || {});
+  if (parts.length || stage.hasRoom) {
+    // Layered rigs (goddess rooms): one choice per part, as the game offers them, plus the room behind her.
+    const box = el.querySelector('.sk'); box.style.cssText = 'display:grid;gap:10px';
+    for (const [part, choices] of parts) {
+      const dd = dropdown({ prefix: part + ':', items: choices.map(c => ({ value: c, label: c.split('/').pop() })), value: stage.partSkin(part), onChange: v => stage.setPart(part, v) });
+      dd.style.width = '100%';
+      box.append(dd);
+    }
+    if (stage.hasRoom) box.append(toggle({ label: 'Room background', checked: stage.showRoom, onChange: v => { stage.roomVisible = v; store('showRoom', String(v)); } }));
+  } else if (stage.skins.length > 1) {
     const sk = dropdown({ items: stage.skins.map(s => ({ value: s, label: s, hint: s === 'hexie' ? 'censored' : s === 'feihexie' ? 'uncensored' : '' })), value: stage.skin, onChange: v => stage.setSkin(v) });
     sk.style.width = '100%';
     el.querySelector('.sk').append(sk);
