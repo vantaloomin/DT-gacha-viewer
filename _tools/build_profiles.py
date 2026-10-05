@@ -108,6 +108,8 @@ def skill(sid, hero_id, kind=None):
         return None
     vals = strs(v)
     des = BL.get(d, '')
+    if re.search(r'temporarily unavailable', des or '', re.I):   # the game's placeholder text
+        des = ''
     base = lambda label: re.sub(r' \((\d+/\d+|empowered)\)$', '', label)
     clips = [c for c, (label, _) in SKILL_CLIPS.get(str(hero_id), {}).items() if base(label) == name]
     cd = floats64(cold)

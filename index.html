@@ -448,6 +448,7 @@ function showProfile() {
   box.innerHTML = `
     ${b.quote ? `<blockquote class="pquote">“${esc(b.quote)}”${b.quote2 ? `<span>${esc(b.quote2)}</span>` : ''}</blockquote>` : ''}
     ${facts.length ? `<dl class="pfacts">${facts.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>` : ''}
+    <div class="pcols"><div class="pcol">
     ${p.skills.length ? `<section class="psec"><h3>Skills</h3><div class="pskills">${p.skills.map((sk, i) => `
       <article class="pskill">
         ${sk.icon ? `<img class="sicon" src="${esc(sk.icon)}" alt="" loading="lazy">` : `<span class="sicon ph"></span>`}
@@ -460,9 +461,11 @@ function showProfile() {
         </div>
       </article>`).join('')}</div></section>` : ''}
     ${p.stars.length ? `<section class="psec"><h3>Star upgrades</h3><ul class="pstars">${p.stars.map(st => `<li><b>★${st.star}</b><span>${st.text}</span></li>`).join('')}</ul></section>` : ''}
+    </div><div class="pcol">
     ${p.voices.length ? `<section class="psec"><div class="row-between"><h3>Voice lines</h3><span class="vlang"></span></div>${voiceGroups(p.voices)}</section>` : ''}
     ${b.stories?.length ? `<section class="psec"><details class="pstory"${profileOpen.stories ? ' open' : ''}><summary><h3>Story</h3><span>${b.stories.length} chapters</span></summary>
-      ${b.stories.map((t, i) => `<div class="pchap"><h4>Chapter ${i + 1}</h4><p>${t}</p></div>`).join('')}</details></section>` : ''}`;
+      ${b.stories.map((t, i) => `<div class="pchap"><h4>Chapter ${i + 1}</h4><p>${t}</p></div>`).join('')}</details></section>` : ''}
+    </div></div>`;
   box.scrollTop = 0;
   box.querySelectorAll('[data-clip]').forEach(btn => btn.onclick = () => watchClip(btn.dataset.clip));
   box.querySelectorAll('.slvl').forEach(btn => btn.onclick = () => {
