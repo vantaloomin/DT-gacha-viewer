@@ -16,9 +16,12 @@ game's publisher. This is a fan project for personal study, unaffiliated with th
 - Windows with the Dragon Traveler PC client installed (the launcher version; the folder that
   contains `DragonTraveler.exe` and `DragonTraveler_Data`, usually `...\DragonTraveler\client`).
   Start the game once and let it finish downloading updates, so the patch files are present.
-- [Python](https://www.python.org/) 3.10 or newer, on PATH.
-- [FFmpeg](https://ffmpeg.org/) on PATH, built with libopus and libvpx (any "full" Windows build,
-  e.g. `winget install Gyan.FFmpeg`).
+- Python 3.10+ and FFmpeg — **nothing to install**: if they aren't on PATH, `Update Gallery.bat`
+  offers to download portable copies (the official Python embeddable zip and a static FFmpeg build)
+  into a `runtime` folder next to the gallery. No installers, admin rights, winget or MSIX packages;
+  delete `runtime` to remove them. It needs about 300 MB, and the `curl` and `tar` commands that
+  come with Windows 10 and 11. If you already have [Python](https://www.python.org/) 3.10+ and
+  [FFmpeg](https://ffmpeg.org/) (built with libopus and libvpx) on PATH, those are used instead.
 - Chrome or Edge for the viewer (it uses WebGL and WebCodecs).
 - About 6 GB of free disk space for the extracted content.
 
@@ -31,8 +34,8 @@ Download the latest zip from [Releases](https://github.com/vantaloomin/DT-gacha-
 git clone https://github.com/vantaloomin/DT-gacha-viewer.git
 ```
 
-Then double-click **`Update Gallery.bat`**. On the first run it checks for Python, installs the
-Python packages and offers to install FFmpeg with winget. It finds the game folder automatically (or
+Then double-click **`Update Gallery.bat`**. On the first run it sets up what's missing (portable
+Python and FFmpeg if needed, then the Python packages). It finds the game folder automatically (or
 asks for it the first time), then runs every extraction step in order. The first run takes several minutes; later runs only
 process files the game has changed, so after a game patch just run it again — the gallery's
 "What's new" button lists new heroes and outfits.

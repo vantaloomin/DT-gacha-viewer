@@ -6,6 +6,13 @@ setlocal
 set PORT=8765
 cd /d "%~dp0"
 
+call "%~dp0_tools\env.bat"
+if not defined PY (
+    echo Python wasn't found. Run "Update Gallery.bat" first - it can set up a portable copy.
+    pause
+    exit /b 1
+)
+
 rem Nothing extracted yet? The gallery needs Update Gallery.bat to run first.
 if not exist "heroes.json" (
     echo The gallery has no content yet. Run "Update Gallery.bat" first to extract it from your game client.
@@ -17,7 +24,7 @@ if not exist "heroes.json" (
 rem Start the server only if nothing is already listening on the port.
 netstat -ano | findstr /r /c:":%PORT% .*LISTENING" >nul
 if errorlevel 1 (
-    start "Hero Gallery Server" /min python "%~dp0_tools\serve.py" %PORT%
+    start "Hero Gallery Server" /min "%PY%" "%~dp0_tools\serve.py" %PORT%
     timeout /t 2 /nobreak >nul
 )
 

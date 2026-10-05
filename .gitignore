@@ -36,3 +36,6 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
+
+# Portable Python and FFmpeg downloaded by Update Gallery.bat
+/runtime/
