@@ -162,6 +162,22 @@ const greetCurrent = () => interactions[shown?.skel]?.voices?.appear && playVoic
 const sound = { get on() { return voiceSettings.enabled; }, set(v) { setSoundEnabled(v); if (v) greetCurrent(); } };
 const dock = createDock($('#wrap'), adapter, { onSnapshot: () => drawer.snapshot(adapter), sound });
 const taps = attachTaps($('#screen'), stage);
+// Goddess rooms: an event's voice line (when sound is on) and its caption across the bottom of the screen
+let roomAudio = null, captionTimer = 0;
+stage.onRoomEvent = e => {
+  const cap = $('#screen .room-caption') || $('#screen').appendChild(h('<div class="room-caption" aria-live="polite"></div>'));
+  clearTimeout(captionTimer);
+  if (e.caption) { cap.textContent = e.caption; cap.classList.add('on'); }
+  const hide = () => cap.classList.remove('on');
+  const file = e.voice && (e.voice[voiceSettings.lang] || e.voice.ja || e.voice.zh);
+  if (file && voiceSettings.enabled) {
+    roomAudio?.pause(); stopVoice();
+    roomAudio = new Audio(file); roomAudio.volume = voiceSettings.volume;
+    roomAudio.onended = () => { captionTimer = setTimeout(hide, 600); };
+    roomAudio.play().catch(() => {});
+  }
+  if (e.caption) captionTimer = setTimeout(hide, Math.max(3500, e.caption.length * 70));
+};
 stage.onAct = (act, names) => { const v = stage.inter?.voices?.anims; if (v) for (const n of names) if (v[n]) { playVoice(v[n]); break; } };
 $('#exportBtn').onclick = () => drawer.open(adapter);
 $('#fullBtn').onclick = () => document.fullscreenElement ? document.exitFullscreen() : $('#wrap').requestFullscreen();

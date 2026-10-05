@@ -83,10 +83,96 @@ for prefab, room_prefab, offset in g.execute('select SpineRole, RoomPrefab, __BI
     if not skel or skel not in out or not os.path.exists(os.path.join(ROOT, bg)):
         continue
     w, h = Image.open(os.path.join(ROOT, bg)).size
-    n = struct.unpack_from('<I', offset or bytes(4))[0]
-    origin = list(struct.unpack_from(f'<{n}f', offset, 4)) if n == 2 else [0.5, 0.5]   # skeleton origin, fraction of the background
-    out[skel]['room'] = {'bg': bg, 'size': [w, h], 'origin': origin, 'unitPx': h / SCREEN_H}
+    # The rig sits at the room's centre (GoddessRoom.Offset is the room's starting scroll position, not this)
+    out[skel]['room'] = {'bg': bg, 'size': [w, h], 'origin': [0.5, 0.5], 'unitPx': h / SCREEN_H}
     rooms += 1
 
+# ---- Tap interactions (the game's room behaviour; semantics from its hotfix code) ----
+# SpineRoleExEvent: Type 1 switch main state, 2 one-shot, 3 change state (part on/off, track 1, additive, held),
+# 4 drag a bone (played here as a tap), 5 switch a sub-skin. ClickArea "x_y_w_h_rot": centre/size in skeleton units
+# (y up), rotation in degrees. Condition/ModCondition: state flags required/set; CountCondition/ModCountCondition:
+# counters required/changed (0 resets, else adds); CountTrigger: {event: "counter-n"} fires when counter >= n.
+class Bin:
+    def __init__(s, b): s.b, s.o = b or bytes(4), 0
+    def i(s): v = struct.unpack_from('<i', s.b, s.o)[0]; s.o += 4; return v
+    def f(s): v = struct.unpack_from('<f', s.b, s.o)[0]; s.o += 4; return round(v, 4)
+    def s(s): n = s.i(); v = s.b[s.o:s.o + n].decode('utf-8', 'replace'); s.o += n; return v
+def blist(b, *fs):
+    r = Bin(b); out = []
+    for _ in range(r.i()):
+        t = tuple(getattr(r, f)() for f in fs); out.append(t if len(t) > 1 else t[0])
+    return out
+def lang(con, t):
+    if not con.execute('select 1 from sqlite_master where name=?', (t + '_Lang',)).fetchone():
+        return {}
+    return {k: v[4:4 + struct.unpack_from('<I', v)[0]].decode('utf-8', 'replace') for k, v in con.execute(f'select id, __BIN__enUS from "{t}_Lang"') if v}
+caption = lang(o, 'SpineRoleExEvent')
+audio_json = os.path.join(ROOT, 'audio', 'audio.json')
+AJ = json.load(open(audio_json, encoding='utf-8')) if os.path.exists(audio_json) else {}
+voice_names = {r[0]: {'ja': r[1], 'zh': r[2]} for r in o.execute('select id, jaJP, zhCN from ResVoice')}
+def voice_files(cue):
+    out = {}
+    for k, name in (voice_names.get(cue) or {}).items():
+        f = AJ.get('cueIndex', {}).get(name) or (AJ.get('multiCues', {}).get(name) or [None])[0]
+        if f:
+            out[k] = f
+    return out or None
+cur = o.execute('select * from SpineRoleExEvent'); cols = [d[0] for d in cur.description]
+events = {}
+for row in cur:
+    r = dict(zip(cols, row))
+    params = blist(r['__BIN__Param'], 's')
+    e = {'type': r['Type'], 'group': r['Group'] or 0, 'block': r['BlockInteract'] or 0,
+         'areas': [[float(v) for v in a.split('_')] + [0] * (5 - len(a.split('_'))) for a in blist(r['__BIN__ClickArea'], 's')],
+         'when': dict(blist(r['__BIN__Condition'], 's', 'i')), 'set': dict(blist(r['__BIN__ModCondition'], 's', 'i')),
+         'whenCount': dict(blist(r['__BIN__CountCondition'], 's', 'i')), 'count': dict(blist(r['__BIN__ModCountCondition'], 's', 'i')),
+         'whenSkin': dict(blist(r['__BIN__SkinCondition'], 's', 's')),
+         'trigger': [[i, t] for i, t in blist(r['__BIN__CountTrigger'], 'i', 's')], 'mix': blist(r['__BIN__MixDuration'], 'f')}
+    t = e['type']
+    if t == 1 and len(params) >= 3:
+        e.update(play=[[int(params[0]), params[1]]], next=int(params[2]))
+    elif t in (2, 3):
+        e['play'] = [[int(params[i]), params[i + 1]] for i in range(0, len(params) - 1, 2)]
+    elif t == 4 and len(params) >= 2:
+        e.update(play=[[int(params[0]), params[1]]], bone=params[2] if len(params) > 2 else None)
+    elif t == 5:
+        e['skins'] = {params[i]: params[i + 1] for i in range(0, len(params) - 1, 2)}
+    if r['PlayVoice']:
+        e['voice'] = voice_files(r['PlayVoice'])
+        e['caption'] = caption.get(r['LangCaptions']) or None
+    events[r['id']] = {k: v for k, v in e.items() if v not in (None, {}, [])} | {'type': t}
+mains = {}
+cur = o.execute('select * from SpineRoleExMainAnim'); cols = [d[0] for d in cur.description]
+for row in cur:
+    r = dict(zip(cols, row))
+    mains[r['id']] = {'loop': [list(a) for a in blist(r['__BIN__Anim'], 'i', 's')], 'pre': r['PreAnim'] or None,
+                      'events': blist(r['__BIN__EventList'], 'i'), 'init': dict(blist(r['__BIN__InitParam'], 's', 'i')),
+                      'initCount': dict(blist(r['__BIN__InitCountParam'], 's', 'i')),
+                      # part -> the animation that leaves it in its non-initial state ("top-idle1_maorongpifeng_tuo#...")
+                      'restore': {k: v for k, _, v in (x.partition('-') for x in (r['ModifyState'] or '').split('#')) if k and v}}
+interactive = 0
+for prefab, default, anim_list in o.execute('select id, DefaultMainAnim, __BIN__MainAnimList from SpineRoleEx'):
+    skel = skel_for(prefab)
+    if not skel or skel not in out or default not in mains:
+        continue
+    todo, used = [default, *ints(anim_list)], {}
+    while todo:   # every main state reachable from the rig's list, through switch events
+        m = todo.pop()
+        if m in used or m not in mains:
+            continue
+        used[m] = mains[m]
+        for eid in mains[m]['events']:
+            ev = events.get(eid, {})
+            todo += [ev['next']] if 'next' in ev else []
+            todo += [int(t[0]) for t in ev.get('trigger', [])]
+    ev_ids = {eid for m in used.values() for eid in m['events']}
+    ev_ids |= {t[0] for eid in list(ev_ids) for t in events.get(eid, {}).get('trigger', [])}
+    out[skel]['interact'] = {
+        'start': default, 'states': mains[default]['init'], 'counts': mains[default]['initCount'],
+        'mains': {str(k): v for k, v in used.items()},
+        'events': {str(k): events[k] for k in sorted(ev_ids) if k in events},
+    }
+    interactive += 1
+
 json.dump(out, open(os.path.join(ROOT, 'rooms.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
-print(f'{len(out)} layered rigs, {rooms} with a room background')
+print(f'{len(out)} layered rigs, {rooms} with a room background, {interactive} with tap interactions')

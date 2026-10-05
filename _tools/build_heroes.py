@@ -166,7 +166,22 @@ taxonomy = {
                  for i, n, c in o_t.execute('select id, LangName, DarkTextColor from Quality order by id') if i in used_rarities],
 }
 
-json.dump({'heroes': out, 'models': models, 'taxonomy': taxonomy}, open(os.path.join(ROOT, 'heroes.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+# Battlefields for the 3D viewer's floor (top-down captures of the battle scenes, extracted by extract.py).
+# Names are descriptive guesses from the scene folders and pictures; captures that don't work as a floor are left out.
+ARENA_NAMES = {
+    'scene_fight_new02': 'Forest glade', 'scene_fight_new06': 'Dusty clearing', 'scene_fight_new07': 'Moonlit ruins',
+    'scene_fight_new10': 'Night grove', 'scene_fight_new13_patajin': 'Tower (gold)', 'scene_fight_new14': 'Arcane sanctum',
+    'scene_fight_new15_juedouchang': 'Duel arena', 'scene_fight_new17_patalv': 'Tower (green)',
+    'scene_fight_new17_patazi': 'Tower (violet)', 'scene_fight_new19_yuanzheng01': 'Expedition: sands',
+    'scene_fight_new20_yuanzheng02': 'Expedition: lakeside', 'scene_fight_new21_yuanzheng03': 'Expedition: red rocks',
+    'scene_fight_new22_xinmotiaozhan': 'Sky bridge', 'scene_pve_jinglinggushu': 'Elven ancient tree',
+    'scene_pve_longhun': 'Dragon soul canyon', 'scene_pve_shilaimu': 'Slime plaza', 'scene_raid_guangchang': 'Raid plaza',
+    'scene_weeklybattle_101': 'Weekly battle grounds',
+}
+arenas = [{'id': k, 'name': n, 'src': rel(os.path.join(ROOT, 'images', 'battlefield', k + '.png'))}
+          for k, n in ARENA_NAMES.items() if os.path.exists(os.path.join(ROOT, 'images', 'battlefield', k + '.png'))]
+
+json.dump({'heroes': out, 'models': models, 'taxonomy': taxonomy, 'arenas': arenas}, open(os.path.join(ROOT, 'heroes.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
 n_skins = sum(len(h['skins']) for h in out)
 print(f"{len(out)} heroes, {n_skins} outfits: "
       f"{sum(bool(s['spine']) for h in out for s in h['skins'])} with Spine, "

@@ -9,6 +9,7 @@
 
 # Data generated from the game's files
 /heroes.json
+/profiles.json
 /manifest.json
 /names.json
 /interactions.json

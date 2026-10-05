@@ -84,7 +84,8 @@ export class SpineStage {
       img.style.display = this.showRoom ? '' : 'none';
       this.screen.append(img);
     }
-    this.inter = interaction?.defaultAct ? { ...interaction, act: null, elapsed: 0, onceDur: 0 } : null;
+    this.inter = interaction?.defaultAct && !layered?.interact ? { ...interaction, act: null, elapsed: 0, onceDur: 0 } : null;
+    this.roomRun = null;
     const host = document.createElement('div');
     host.style.cssText = 'position:absolute;inset:0';
     this.screen.append(host);
@@ -113,7 +114,7 @@ export class SpineStage {
           // play() starts the skeleton's first animation unless config.animation is set, so set it first.
           if (first) p.config.animation = first;
           p.play();
-          if (this.inter) this.startInteractive();
+          if (this.interactive) this.startInteractive();
           else if (first) this.play(first);
           this.camRect = this.#cameraFor();
           resolve(this);
@@ -134,7 +135,8 @@ export class SpineStage {
     if (!this.layered) return;
     this.layered.chosen[part] = skin;
     this.#setComposite();
-    if (this.anim) this.play(this.anim);
+    if (this.mode === 'interactive' && this.roomRun) this.#roomApply();   // stay in the room's interactive mode
+    else if (this.anim) this.play(this.anim);
   }
 
   get hasRoom() { return !!this.roomImg; }
@@ -147,7 +149,8 @@ export class SpineStage {
   setSkin(name) {
     const s = this.player.skeleton;
     s.setSkinByName(name); s.setSlotsToSetupPose();
-    if (this.mode === 'interactive') this.#enterAct(this.inter.act ?? this.inter.defaultAct, true);
+    if (this.mode === 'interactive' && this.roomRun) this.#roomApply();
+    else if (this.mode === 'interactive') this.#enterAct(this.inter.act ?? this.inter.defaultAct, true);
     else if (this.anim) this.play(this.anim);
   }
 
@@ -160,9 +163,11 @@ export class SpineStage {
   }
 
   // ---------- Interactive mode (the game's tap behaviour) ----------
-  get interactive() { return !!this.inter; }
+  get interactive() { return !!this.inter || !!this.layered?.interact; }
+  /** onRoomEvent(event): a goddess-room event started (for its voice line and caption). */
 
   startInteractive() {
+    if (this.layered?.interact) return this.#startRoom();
     if (!this.inter) return;
     this.mode = 'interactive';
     this.#enterAct(this.inter.defaultAct, true);
@@ -175,13 +180,15 @@ export class SpineStage {
     if (!this.player?.skeleton) return;
     const skin = this.#skinFor(this.rig);
     if (skin) { this.player.skeleton.setSkinByName(skin); this.player.skeleton.setSlotsToSetupPose(); }
-    if (this.mode === 'interactive') this.#enterAct(this.inter.defaultAct, true);
+    if (this.mode === 'interactive' && this.roomRun) this.#roomApply();
+    else if (this.mode === 'interactive') this.#enterAct(this.inter.defaultAct, true);
     else if (this.anim) this.play(this.anim);
   }
 
   /** Tap zones for the current act, in pixels relative to the screen element. */
   zones() {
     if (this.mode !== 'interactive' || !this.camRect) return [];
+    if (this.roomRun) return this.#roomZones();
     const act = this.inter.acts[this.inter.act], r = this.camRect, W = this.screen.clientWidth, H = this.screen.clientHeight;
     return this.inter.clicks.flatMap(c => c.areas.map(([cx, cy, w, h]) => ({
       id: c.id, enabled: !!act?.cancel.includes(c.id),
@@ -191,12 +198,154 @@ export class SpineStage {
 
   /** Handles a tap at screen-element pixel (x, y). Returns true if it triggered a reaction. */
   tap(x, y) {
+    if (this.roomRun) {
+      const z = this.zoneAt(x, y);
+      if (!z) return false;
+      if (this.player.paused) this.player.play();
+      return this.#roomFire(z.id);
+    }
     const z = this.zones().find(z => z.enabled && x >= z.left && x <= z.left + z.width && y >= z.top && y <= z.top + z.height);
     if (!z) return false;
     this.#enterAct(this.inter.clicks.find(c => c.id === z.id).act);
     if (this.player.paused) this.player.play();
     return true;
   }
+
+  /** The tap zone under screen-element pixel (x, y), honouring rotation; the topmost (last listed) wins. */
+  zoneAt(x, y) {
+    const zs = this.zones().filter(z => z.enabled);
+    for (let i = zs.length - 1; i >= 0; i--) {
+      const z = zs[i], cx = z.left + z.width / 2, cy = z.top + z.height / 2, a = (z.rot || 0) * Math.PI / 180;
+      // screen y points down, so a counter-clockwise rotation in the skeleton is clockwise on screen
+      const dx = x - cx, dy = y - cy, lx = dx * Math.cos(a) - dy * Math.sin(a), ly = dx * Math.sin(a) + dy * Math.cos(a);
+      if (Math.abs(lx) <= z.width / 2 && Math.abs(ly) <= z.height / 2) return z;
+    }
+    return null;
+  }
+
+  // ---------- Goddess rooms: the game's tap interactions (see _tools/build_rooms.py) ----------
+  // A room is in one "main" state (a looping idle) with state flags (which outfit parts are on) and counters.
+  // Each main state lists events with tap areas and conditions; an event switches main state, plays a one-shot,
+  // takes a part off / puts it on (held on track 1, additive) or swaps a sub-skin.
+  #startRoom() {
+    const I = this.layered.interact;
+    this.mode = 'interactive';
+    this.roomRun = { main: I.start, states: { ...I.states }, counts: { ...I.counts }, locks: new Set(), pre: I.mains[I.start]?.pre };
+    this.#roomApply();
+    this.player.play();
+  }
+
+  // Puts the room on screen for its current state: the start state's pre pose (applied once, as the game does),
+  // the current main loop, and any part already taken off held at the end of its animation.
+  #roomApply() {
+    const I = this.layered.interact, R = this.roomRun, p = this.player, st = p.animationState, sk = p.skeleton, d = sk.data;
+    st.clearTracks(); sk.setToSetupPose();
+    const pre = R.pre && d.findAnimation(R.pre);
+    if (pre) pre.apply(sk, pre.duration, pre.duration, false, [], 1, spine.MixBlend.setup, spine.MixDirection.mixIn);
+    this.#roomLoops(0);
+    const changed = Object.entries(I.mains[R.main]?.restore || {}).filter(([k, a]) => R.states[k] !== I.states[k] && d.findAnimation(a));
+    changed.forEach(([, a], i) => {
+      const anim = d.findAnimation(a);
+      if (i < changed.length - 1) { anim.apply(sk, anim.duration, anim.duration, false, [], 1, spine.MixBlend.setup, spine.MixDirection.mixIn); return; }
+      const e = st.setAnimation(1, a, false);
+      Object.assign(e, { mixDuration: 0, holdPrevious: true, mixBlend: spine.MixBlend.add });
+      e.trackTime = anim.duration;
+    });
+    p.playTime = 0;
+  }
+
+  #roomLoops(mix) {
+    const m = this.layered.interact.mains[this.roomRun.main], st = this.player.animationState, d = this.player.skeleton.data;
+    for (const [track, name] of m?.loop || []) {
+      if (!d.findAnimation(name)) continue;
+      const e = st.setAnimation(track, name, true); e.mixDuration = mix;
+      if (track === 0) this.anim = name;
+    }
+  }
+
+  #roomOk(e) {
+    const R = this.roomRun, chosen = this.layered.chosen;
+    return Object.entries(e.when || {}).every(([k, v]) => (R.states[k] ?? 0) === v)
+      && Object.entries(e.whenCount || {}).every(([k, v]) => (R.counts[k] ?? 0) === v)
+      && Object.entries(e.whenSkin || {}).every(([k, v]) => chosen[k] === v);
+  }
+
+  #roomZones() {
+    const I = this.layered.interact, R = this.roomRun, r = this.camRect, W = this.screen.clientWidth, H = this.screen.clientHeight;
+    const ids = (I.mains[R.main]?.events || []).filter(id => I.events[id] && this.#roomOk(I.events[id]));
+    return ids.flatMap(id => (I.events[id].areas || []).filter(([, , w, h]) => w > 1 && h > 1).map(([cx, cy, w, h, rot]) => ({
+      id, enabled: true, rot,
+      left: (cx - w / 2 - r.x) / r.w * W, top: (1 - (cy + h / 2 - r.y) / r.h) * H, width: w / r.w * W, height: h / r.h * H,
+    })));
+  }
+
+  #roomFire(id, triggered = false) {
+    const I = this.layered.interact, R = this.roomRun, e = I.events[id];
+    if (!e) return false;
+    if (!triggered) {
+      const blocked = e.block ? R.locks.size > 0 : [...R.locks].some(g => g !== e.group);
+      if (blocked || !this.#roomOk(e)) return false;
+    }
+    const p = this.player, st = p.animationState, sk = p.skeleton, d = sk.data;
+    const group = e.group || 0;
+    R.locks.add(group);
+    const unlock = () => R.locks.delete(group);
+    const update = () => {
+      for (const [k, v] of Object.entries(e.set || {})) if (k in R.states) R.states[k] = v;
+      for (const [k, v] of Object.entries(e.count || {})) R.counts[k] = v === 0 ? 0 : (R.counts[k] ?? 0) + v;
+    };
+    const loopOf = track => (I.mains[R.main]?.loop || []).find(([t]) => t === track)?.[1];
+    const once = (track, name, mix, after) => {
+      if (!d.findAnimation(name)) { after?.(); return null; }
+      const en = st.setAnimation(track, name, false);
+      en.mixDuration = mix;
+      if (after) en.listener = { complete: () => { en.listener = null; after(); } };
+      return en;
+    };
+    this.onRoomEvent?.(e);
+    const mix0 = e.mix?.[0] || 0;
+    if (e.type === 1) {
+      if (e.next === R.main || !e.play?.length) { unlock(); return true; }
+      update();
+      const [track, name] = e.play[0];
+      once(track, name, mix0, () => { R.main = e.next; this.#roomLoops(e.mix?.[1] || 0); unlock(); });
+    } else if (e.type === 2 || e.type === 4) {   // one-shot (a bone drag is played as a tap here)
+      const [track, name] = e.play?.[0] || [];
+      once(track, name, mix0, unlock);
+      const loop = loopOf(track);
+      if (loop && d.findAnimation(name)) st.addAnimation(track, loop, true, 0);
+    } else if (e.type === 3) {   // take a part off / put it on: held on track 1 so it stays that way
+      update();
+      let left = e.play?.length || 0;
+      const done = () => { if (--left <= 0) { unlock(); this.#roomTriggers(e); } };
+      if (!left) { unlock(); this.#roomTriggers(e); }
+      for (const [track, name] of e.play || []) {
+        const en = once(track, name, mix0, done);
+        if (!en) continue;
+        if (track === 0) { const loop = loopOf(0); if (loop) st.addAnimation(0, loop, true, 0); }
+        else Object.assign(en, { holdPrevious: true, mixBlend: spine.MixBlend.add });
+      }
+    } else if (e.type === 5) {   // swap a sub-skin (e.g. hair colour) in place
+      Object.assign(this.layered.chosen, e.skins || {});
+      const comp = new spine.Skin('composite');
+      for (const n of [this.layered.skins[0], ...Object.values(this.layered.chosen)]) { const sn = n && d.findSkin(n); if (sn) comp.addSkin(sn); }
+      sk.setSkin(comp);
+      unlock();
+    } else unlock();
+    return true;
+  }
+
+  // CountTrigger: { event, "counter-n" } fires the event once the counter reaches n
+  #roomTriggers(e) {
+    for (const [id, cond] of e.trigger || []) {
+      const i = cond.lastIndexOf('-'), key = cond.slice(0, i), n = +cond.slice(i + 1);
+      if ((this.roomRun.counts[key] ?? 0) >= n) this.#roomFire(id, true);
+    }
+  }
+
+  /** Room state for the UI: main state id, flags and counters. */
+  get roomState() { return this.roomRun && { main: this.roomRun.main, states: { ...this.roomRun.states }, counts: { ...this.roomRun.counts } }; }
+  resetRoom() { if (this.layered?.interact) this.#startRoom(); }
 
   // The game combines the base skin with one skin per part (hair, horns, throne...) at the same time.
   #setComposite() {
@@ -262,7 +411,8 @@ export class SpineStage {
 
   // Puts the live skeleton back after a helper posed it for measuring.
   #restore() {
-    if (this.mode === 'interactive') this.#enterAct(this.inter.act ?? this.inter.defaultAct, true, 0, true);
+    if (this.mode === 'interactive' && this.roomRun) this.#roomApply();
+    else if (this.mode === 'interactive') this.#enterAct(this.inter.act ?? this.inter.defaultAct, true, 0, true);
     else if (this.anim) this.#startClean(this.anim);
   }
 
@@ -338,7 +488,7 @@ export class SpineStage {
         this.exportRect = null;
         renderer.resize = saved.resize; p.bg.set(...saved.bg);
         p.stopRequestAnimationFrame = false;
-        if (!still) { if (this.mode === 'interactive') this.#enterAct(this.inter.defaultAct, true); else this.#startClean(this.anim); }
+        if (!still) { if (this.mode === 'interactive' && this.roomRun) this.#roomApply(); else if (this.mode === 'interactive') this.#enterAct(this.inter.defaultAct, true); else this.#startClean(this.anim); }
         if (saved.paused) p.pause(); else p.play();
         p.drawFrame();
       },

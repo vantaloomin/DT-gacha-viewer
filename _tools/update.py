@@ -12,6 +12,7 @@ Steps (each is its own script in this folder and can be run alone):
   build_rooms.py         goddess rooms: layered skins, pre-animations, backgrounds
   build_skills.py        the game's skill names for 3D animation clips
   build_heroes.py        heroes.json for the gallery
+  build_profiles.py      profiles.json: biography, skills, voice lines
   vendor.py              local copies of the web libraries (only fetches missing files)
 Then compares heroes.json before/after and writes whatsnew.json (shown in the gallery).
 
@@ -38,6 +39,7 @@ STEPS = [
     ('Building goddess rooms', 'build_rooms.py', True),
     ('Naming skill animations', 'build_skills.py', True),
     ('Building hero list', 'build_heroes.py', True),
+    ('Building hero profiles', 'build_profiles.py', True),
     ('Checking local web libraries', 'vendor.py', False),
 ]
 

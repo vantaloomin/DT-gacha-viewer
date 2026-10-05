@@ -30,6 +30,8 @@ export class ModelStage {
     this.mixer = null; this.action = null; this.model = null; this.clips = [];
     this.speed = 1; this.paused = false; this.lighting = 'lit';
     this.loop = true; this.ended = false;   // loop off: stop on the last frame (ended) instead of repeating
+    this.backdrop = null;   // null (plain colour), { image } (a painted backdrop) or { floor } (a battlefield floor)
+    this.backdropTex = null; this.floor = null;
     this.setBackground('#1d1d23');
 
     new ResizeObserver(() => this.#resize()).observe(container);
@@ -54,6 +56,7 @@ export class ModelStage {
     const first = this.clips.find(c => /idle_normal/.test(c.name)) || this.clips.find(c => /idle/.test(c.name)) || this.clips[0];
     if (first) this.play(first.name);
     this.mixer.update(0);
+    this.#applyBackdrop();   // a battlefield floor is sized and placed for this model
     this.frame();
     return this;
   }
@@ -81,7 +84,64 @@ export class ModelStage {
 
   setBackground(color) {
     this.background = color;
-    this.scene.background = color ? new THREE.Color(color) : null;
+    this.#applyBackdrop();
+  }
+
+  /**
+   * Scenery: { image: url } shows a picture behind the model (fills the view, cropped like CSS "cover");
+   * { floor: url } stands the model on a top-down battlefield capture, fading into the background colour.
+   * null: just the background colour.
+   */
+  async setBackdrop(backdrop) {
+    this.backdrop = backdrop;
+    const url = backdrop?.image || backdrop?.floor;
+    this.backdropTex?.dispose(); this.backdropTex = null;
+    if (url) {
+      const tex = await new THREE.TextureLoader().loadAsync(url).catch(() => null);
+      if (this.backdrop !== backdrop) { tex?.dispose(); return; }   // changed again while loading
+      if (tex) { tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8; this.backdropTex = tex; }
+    }
+    this.#applyBackdrop();
+    this.frame();
+  }
+
+  #applyBackdrop() {
+    const color = this.background ? new THREE.Color(this.background) : null, tex = this.backdropTex;
+    if (this.floor) { this.scene.remove(this.floor); this.floor.geometry.dispose(); this.floor.material.dispose(); this.floor = null; }
+    this.scene.fog = null;
+    if (tex && this.backdrop?.image) {
+      this.scene.background = tex;
+      this.#coverBackground();
+    } else {
+      this.scene.background = color;
+      if (tex && this.backdrop?.floor && this.model) {
+        const box = this.#modelBox(), size = box.getSize(new THREE.Vector3()), centre = box.getCenter(new THREE.Vector3());
+        const w = Math.max(size.y, 0.5) * 18, h = w * tex.image.height / tex.image.width;   // roughly a battle arena's scale
+        this.floor = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex }));
+        this.floor.rotation.x = -Math.PI / 2;
+        this.floor.position.set(centre.x, box.min.y - 0.002, centre.z);
+        this.scene.add(this.floor);
+        if (color) this.scene.fog = new THREE.Fog(color, w * 0.18, w * 0.5);   // fade the arena's far edges
+      }
+    }
+  }
+
+  // Crop a background picture to the canvas shape instead of stretching it.
+  #coverBackground() {
+    const tex = this.scene.background;
+    if (!tex?.isTexture || !tex.image) return;
+    const c = this.renderer.domElement, canvas = c.width / c.height, img = tex.image.width / tex.image.height;
+    tex.matrixAutoUpdate = true;
+    if (canvas > img) { tex.repeat.set(1, img / canvas); tex.offset.set(0, (1 - img / canvas) / 2); }
+    else { tex.repeat.set(canvas / img, 1); tex.offset.set((1 - canvas / img) / 2, 0); }
+  }
+
+  #modelBox() {
+    this.model.updateMatrixWorld(true);
+    const box = new THREE.Box3();
+    this.model.traverse(o => { if (o.isSkinnedMesh) { o.computeBoundingBox?.(); box.union(o.boundingBox.clone().applyMatrix4(o.matrixWorld)); } });
+    if (box.isEmpty()) box.setFromObject(this.model);
+    return box;
   }
 
   // 'lit' (the model's own material under lights), 'toon' (cel-shaded), 'unlit' (flat texture colour).
@@ -101,15 +161,14 @@ export class ModelStage {
   frame() {
     if (!this.model) return;
     this.userMoved = false;
-    this.model.updateMatrixWorld(true);
-    const box = new THREE.Box3();
-    this.model.traverse(o => { if (o.isSkinnedMesh) { o.computeBoundingBox?.(); box.union(o.boundingBox.clone().applyMatrix4(o.matrixWorld)); } });
-    if (box.isEmpty()) box.setFromObject(this.model);
+    const box = this.#modelBox();
     const size = box.getSize(new THREE.Vector3()), centre = box.getCenter(new THREE.Vector3());
     const fov = THREE.MathUtils.degToRad(this.camera.fov);
     const dist = Math.max(size.y, size.x / this.camera.aspect) / 2 / Math.tan(fov / 2) * 1.35;
     // glTF faces +Z; the converted Unity models face the camera from +Z too.
-    this.camera.position.set(centre.x, centre.y + size.y * 0.05, centre.z + dist);
+    // On a battlefield, look down a little so the ground reads as ground
+    const lift = this.floor ? dist * 0.35 : size.y * 0.05;
+    this.camera.position.set(centre.x, centre.y + lift, centre.z + Math.sqrt(dist * dist - (this.floor ? lift * lift : 0)));
     this.camera.near = dist / 100; this.camera.far = dist * 100; this.camera.updateProjectionMatrix();
     this.controls.target.copy(centre);
     this.controls.update();
@@ -125,9 +184,10 @@ export class ModelStage {
     let W, H;
     if (aspect >= 1) { W = longEdge; H = Math.round(longEdge / aspect); } else { H = longEdge; W = Math.round(longEdge * aspect); }
     W += W & 1; H += H & 1;
-    const saved = { pixelRatio: r.getPixelRatio(), size, bg: this.scene.background, rot: this.model?.rotation.y || 0, time: this.action?.time || 0, paused: this.paused };
+    const saved = { pixelRatio: r.getPixelRatio(), size, bg: this.scene.background, fog: this.scene.fog, rot: this.model?.rotation.y || 0, time: this.action?.time || 0, paused: this.paused };
     this.paused = true;
     r.setPixelRatio(1); r.setSize(W, H, false);
+    this.#coverBackground();
     cam.aspect = W / H; cam.updateProjectionMatrix();
     const clipDur = this.duration();
     const seconds = turntable ? Math.max(turntableSeconds, clipDur) : clipDur;
@@ -142,11 +202,18 @@ export class ModelStage {
         r.render(this.scene, cam);
         ctx.drawImage(r.domElement, 0, 0);
       },
-      setTransparent: on => { this.scene.background = on ? null : saved.bg; },
+      setTransparent: on => {   // a transparent export leaves out all scenery
+        this.scene.background = on ? null : saved.bg;
+        if (this.floor) this.floor.visible = !on;
+        this.scene.fog = on ? null : saved.fog;
+        if (!on) this.#coverBackground();
+      },
       done: () => {
         r.setPixelRatio(saved.pixelRatio); r.setSize(saved.size.x, saved.size.y, false);
         cam.aspect = saved.size.x / saved.size.y; cam.updateProjectionMatrix();
-        this.scene.background = saved.bg;
+        this.scene.background = saved.bg; this.scene.fog = saved.fog;
+        if (this.floor) this.floor.visible = true;
+        this.#coverBackground();
         if (this.model) this.model.rotation.y = saved.rot;
         if (this.action) { this.action.time = saved.time; this.mixer.update(0); }
         this.paused = saved.paused;
@@ -177,6 +244,7 @@ export class ModelStage {
     const w = this.container.clientWidth || 1, h = this.container.clientHeight || 1;
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
+    this.#coverBackground();
     if (!this.userMoved) this.frame();
   }
 

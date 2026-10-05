@@ -58,20 +58,24 @@ python _tools\config.py "D:\Games\DragonTraveler\client"
 
 ## Using the gallery
 
+- **Profile** — the hero's biography, skills (with "Watch in 3D" for each), star upgrades and voice
+  lines, grouped by type. Heroes open here; once you pick another tab yourself, the next hero opens on that.
 - **Animated** — the hero's Spine illustration inside a landscape phone frame using the game's own
   2340×1080 screen camera. Heroes open in *Interactive* mode: tap the character to trigger the
   reactions the game defines (Settings → *Show tap zones*). Sound is off by default; turn it on with
   the speaker button (or `M`) for greetings and tap voice lines, in Japanese or Chinese.
 - **Art** — portrait, card and background, with censored variants where the game has them.
 - **Videos** — the in-game showcase intro/loop videos. They wait for Play unless you switch on *Auto-play*.
-- **3D Model** — the battle model with every animation clip (idle, run, skills, reactions, story);
-  orbit/zoom, lit/toon/unlit lighting. Models hold their idle pose until you press Play or pick a clip
-  (Settings → *Auto-play animation* to start them automatically).
-- A hero opens on **Art** (or the 3D model, videos or animation, in that order, if it has no art).
+- **3D Model** — the battle model with every animation clip, named after the game's skills where possible
+  (idle, run, skills, reactions, story); orbit/zoom, lit/toon/unlit lighting. Settings → *Scenery* puts
+  the outfit's painted background behind the model, or stands it on one of the game's battlefields.
+  Models hold their idle pose until you press Play or pick a clip (*Auto-play animation* / *Loop animation*).
 - **Export** — still PNG, animated WebP, GIF, WebM or a zip of PNG frames, at up to the game's native
   2340 px, with a transparent or solid background; 3D exports can spin as a 360° turntable.
 - **All Spine rigs** (`viewer.html`) — every rig in the game, including goddess rooms, affection
-  scenes, events and UI animations.
+  scenes, events and UI animations. Goddess rooms play like the game: tap her or the objects in the room to
+  change pose, take outfit parts off and put them back, or swap her hair colour, with voice lines and captions
+  (Settings → *Show tap zones* shows where to tap).
 - Press `?` in the gallery for keyboard shortcuts.
 
 The gallery works offline: `_tools/vendor.py` keeps local copies of the web libraries it needs.
@@ -93,6 +97,7 @@ the `_tools` folder):
 | `build_interactions.py` | The game's tap state machine (`SpineRole`, `SpineRoleClick`, `SpineRoleAct`) and voice cue ids. |
 | `build_rooms.py` | Goddess rooms: the skins the game layers together, the "pre" animation each idle needs, and the room background and where the goddess sits in it (`SpineRoleEx`, `GoddessRoom`). |
 | `build_skills.py` | The game's skill names for 3D animation clips: hero → skills (`Heroes`, `HeroesSkill`, `BattleSkill`) → actions (`ASkill`, `ASkillItem`) → the clip each action file plays. |
+| `build_profiles.py` | Each hero's Profile: biography (`HeroesInfo`), skills with descriptions, cooldowns, icons and their 3D clips (`BattleSkill`), star upgrades, and voice lines grouped by type with their audio files (goddess-room lines have subtitles). |
 | `build_heroes.py` | `heroes.json`: every hero, outfit, rig, image, video, model and voice. |
 | `vendor.py` | Downloads pinned copies of the web libraries into `vendor/`. |
 

@@ -1,4 +1,4 @@
-import json, os, sys
+import json, os, re, sys
 from multiprocessing import Pool
 from dtunpack import load
 from config import ROOT as OUT
@@ -11,6 +11,8 @@ PREFIXES = {
     'assets/res/gui/bigimage/herogacha/': 'images/herogacha/',
     'assets/res/gui/texture/icon/heroicon/': 'images/heroicon/',
     'assets/res/gui/bigimage/cardicon/': 'images/cardicon/',
+    # skill icons for the Profile page
+    'assets/res/gui/texture/icon/skillicon/': 'images/skillicon/',
     # goddess room backgrounds and the collectible props drawn over them
     'assets/res/gui/bigimage/goddess/': 'images/goddess/',
     # class and faction icons used by the gallery's filters
@@ -20,7 +22,14 @@ PREFIXES = {
 # Optional command-line filter: only extract outputs under these prefixes, e.g. `python extract.py images/heroicon/`
 ONLY = [a for a in sys.argv[1:] if not a.startswith('--')]
 FULL = '--full' in sys.argv   # ignore extract_state.json and re-extract everything
+# Battle arenas: each battle scene ships a top-down capture of its ground (scenecapturetexture.png); the 3D model
+# viewer can stand a hero on it. Flattened to images/battlefield/<scene>.png.
+ARENA = re.compile(r'assets/res/scenes/scene_fight/([^/]+)/(?:texture/)?scenecapturetexture\.png$')
 def target(c):
+    m = ARENA.match(c)
+    if m:
+        t = f'images/battlefield/{m[1]}.png'
+        return t if not ONLY or any(t.startswith(o) for o in ONLY) else None
     for p, d in PREFIXES.items():
         if c.startswith(p):
             t = d + c[len(p):]

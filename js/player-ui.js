@@ -38,7 +38,7 @@ export function clipLabel(name, named = {}) {
   if (named[name]) return named[name][0];
   const m = /^skill_(\d+)(?:_(\d+))?(.*)$/.exec(name);
   if (m) return `Skill ${+m[1]}${m[2] ? ` · part ${+m[2]}` : ''}${m[3] ? ' ' + m[3].replace(/_/g, ' ').trim() : ''}`;
-  const words = name.split(/_+/).flatMap(w => { const n = /^(\D*)(\d*)$/.exec(w); return n[2] ? [n[1], n[2]] : [w]; }).filter(Boolean);
+  const words = name.split(/_+/).flatMap(w => { const n = /^(\D+)(\d+)$/.exec(w); return n ? [n[1], n[2]] : [w]; }).filter(Boolean);   // 'attack1' -> 'attack 1'
   const out = words.map(w => /^\d+$/.test(w) ? w : (CLIP_WORDS[w.toLowerCase()] ?? w)).filter(Boolean)
     .map((w, i) => i ? w[0].toLowerCase() + w.slice(1) : w);   // sentence case
   const s = out.join(' ').replace(/\s+/g, ' ').trim();
@@ -333,7 +333,7 @@ export function attachTaps(screen, stage) {
   screen.append(overlay);
   let show = recall('showZones') === 'true';
   const local = e => { const r = screen.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-  const hit = (x, y) => stage.zones().find(z => z.enabled && x >= z.left && x <= z.left + z.width && y >= z.top && y <= z.top + z.height);
+  const hit = (x, y) => stage.zoneAt(x, y);
   screen.addEventListener('pointerdown', e => {
     if (stage.mode !== 'interactive' || e.button !== 0) return;
     const [x, y] = local(e);
@@ -349,7 +349,7 @@ export function attachTaps(screen, stage) {
     while (overlay.children.length > zones.length) overlay.lastChild.remove();
     zones.forEach((z, i) => {
       const el = overlay.children[i] || overlay.appendChild(h('<div class="zone"></div>'));
-      Object.assign(el.style, { left: z.left + 'px', top: z.top + 'px', width: z.width + 'px', height: z.height + 'px' });
+      Object.assign(el.style, { left: z.left + 'px', top: z.top + 'px', width: z.width + 'px', height: z.height + 'px', transform: z.rot ? `rotate(${-z.rot}deg)` : '' });
       el.classList.toggle('off', !z.enabled);
     });
   })();
@@ -425,5 +425,5 @@ export function spineSettings(stage, opts) {
 /** Animation picker items for a Spine stage: the game's interactive mode first, then every animation. */
 export function spineAnimItems(stage) {
   const items = stage.animations.map(a => ({ value: a, label: a, group: stage.interactive ? 'Single animation' : undefined }));
-  return stage.interactive ? [{ value: '__interactive', label: 'Interactive', group: 'Game behaviour', hint: stage.inter.clicks.length ? 'tap to react' : '' }, ...items] : items;
+  return stage.interactive ? [{ value: '__interactive', label: 'Interactive', group: 'Game behaviour', hint: stage.inter?.clicks.length || stage.layered?.interact ? 'tap to react' : '' }, ...items] : items;
 }

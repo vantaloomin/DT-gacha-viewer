@@ -6,10 +6,13 @@ It also stops by itself once no gallery page is open: each open page pings /__pi
 (js/keepalive.js), and the server exits after IDLE_EXIT seconds without any request. The limit is
 generous because Chrome slows timers in background tabs to about once a minute.
 
+It answers byte-range requests (HTTP 206), which browsers use to seek in videos and audio without
+downloading the whole file first; plain `http.server` ignores them, so scrubbing could stall or jump back.
+
 Usage: python serve.py [port] [--stay]   (serves the folder above this one, on 127.0.0.1;
                                           --stay keeps it running until you close the window)
 """
-import functools, http.server, os, sys, threading, time
+import functools, http.server, os, re, sys, threading, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ARGS = [a for a in sys.argv[1:] if not a.startswith('--')]
@@ -50,7 +53,52 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def end_headers(self):
         self.send_header('Cache-Control', 'no-cache')
+        self.send_header('Accept-Ranges', 'bytes')
         super().end_headers()
+
+    # ---- byte ranges ("Range: bytes=start-end"), for seeking in media ----
+    def send_head(self):
+        self._range_left = None
+        rng = self.headers.get('Range')
+        path = self.translate_path(self.path)
+        m = re.fullmatch(r'bytes=(\d*)-(\d*)', (rng or '').strip())
+        if not m or not (m[1] or m[2]) or not os.path.isfile(path):
+            return super().send_head()
+        size = os.path.getsize(path)
+        if m[1]:
+            start, end = int(m[1]), min(int(m[2]) if m[2] else size - 1, size - 1)
+        else:   # "bytes=-N": the last N bytes
+            start, end = max(0, size - int(m[2])), size - 1
+        if start >= size or start > end:
+            self.send_response(416)
+            self.send_header('Content-Range', f'bytes */{size}')
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return None
+        f = open(path, 'rb')
+        f.seek(start)
+        self.send_response(206)
+        self.send_header('Content-Type', self.guess_type(path))
+        self.send_header('Content-Range', f'bytes {start}-{end}/{size}')
+        self.send_header('Content-Length', str(end - start + 1))
+        self.send_header('Last-Modified', self.date_time_string(os.path.getmtime(path)))
+        self.end_headers()
+        self._range_left = end - start + 1
+        return f
+
+    def copyfile(self, source, outputfile):
+        try:
+            left = getattr(self, '_range_left', None)
+            if left is None:
+                return super().copyfile(source, outputfile)
+            while left > 0:
+                chunk = source.read(min(1 << 16, left))
+                if not chunk:
+                    break
+                outputfile.write(chunk)
+                left -= len(chunk)
+        except (ConnectionError, OSError):
+            pass   # the browser cancelled the request (normal while seeking)
 
     def log_message(self, *args):   # keep the console quiet
         pass
