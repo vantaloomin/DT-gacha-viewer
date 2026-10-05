@@ -278,7 +278,10 @@ export class SpineStage {
   #cameraFor() {
     const d = this.player.skeleton.data;
     const authoredForScreen = this.rig.group === 'spine/hero' ||
-      (Math.abs(d.width - SCREEN.w) < 4 && Math.abs(d.height - SCREEN.h) < 4 && Math.abs(d.x - SCREEN.x) < 4 && Math.abs(d.y - SCREEN.y) < 4);
+      (Math.abs(d.width - SCREEN.w) < 4 && Math.abs(d.height - SCREEN.h) < 4 && Math.abs(d.x - SCREEN.x) < 4 && Math.abs(d.y - SCREEN.y) < 4) ||
+      // Affection scenes are full-screen too, but their stored bounds are unreliable: several are laid out
+      // zoomed out in the setup pose (a 5588-wide background) and `birth` zooms them in to fill the screen.
+      /\/haogandu\//.test(this.rig.skel);
     if (this.camMode === 'screen' && authoredForScreen) return { ...SCREEN };
     let b = d.width > 0 && d.height > 0 ? { x: d.x, y: d.y, w: d.width, h: d.height } : null;
     if (!b) {
