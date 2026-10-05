@@ -233,8 +233,8 @@ export function createExportDrawer() {
 
 // ---------- Video player ----------
 export function createVideoPlayer(container) {
-  const el = h(`<div class="vwrap"><div class="row-between v-top"><div class="v-switch"></div><div class="v-opts"><span class="v-auto"></span><a class="btn v-dl">${icon('download')}<span>Download WebM</span></a></div></div>
-    <div class="vplayer"><video playsinline loop preload="metadata"></video>
+  const el = h(`<div class="vwrap"><div class="row-between v-top"><div class="v-switch"></div><div class="v-opts"><span class="v-auto"></span><span class="v-loop"></span><a class="btn v-dl">${icon('download')}<span>Download WebM</span></a></div></div>
+    <div class="vplayer"><video playsinline preload="metadata"></video>
       <button class="big-play" aria-label="Play">${icon('play')}</button>
       <div class="vbar"><button class="btn icon ghost v-play" aria-label="Play or pause" data-kbd="Space">${icon('play')}</button>
         <span class="time v-cur" style="font-variant-numeric:tabular-nums;font-size:12px;color:var(--muted)">0:00.0</span><span class="v-scrub" style="flex:1;display:flex"></span>
@@ -250,6 +250,9 @@ export function createVideoPlayer(container) {
   // Auto-play is off by default; the choice is remembered
   let autoplay = recall('videoAutoplay') === 'true';
   el.querySelector('.v-auto').append(toggle({ label: 'Auto-play', checked: autoplay, onChange: on => { autoplay = on; store('videoAutoplay', on); } }));
+  // Loop is off by default too: a video plays to the end and stops; Play starts it again.
+  v.loop = recall('videoLoop') === 'true';
+  el.querySelector('.v-loop').append(toggle({ label: 'Loop', checked: v.loop, onChange: on => { v.loop = on; store('videoLoop', on); } }));
 
   const togglePlay = () => v.paused ? v.play() : v.pause();
   el.querySelector('.big-play').onclick = togglePlay;

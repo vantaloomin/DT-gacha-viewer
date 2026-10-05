@@ -29,6 +29,7 @@ export class ModelStage {
     this.clock = new THREE.Clock();
     this.mixer = null; this.action = null; this.model = null; this.clips = [];
     this.speed = 1; this.paused = false; this.lighting = 'lit';
+    this.loop = true; this.ended = false;   // loop off: stop on the last frame (ended) instead of repeating
     this.setBackground('#1d1d23');
 
     new ResizeObserver(() => this.#resize()).observe(container);
@@ -66,13 +67,17 @@ export class ModelStage {
     this.mixer.stopAllAction();
     this.action = this.mixer.clipAction(clip);
     this.action.reset().setLoop(THREE.LoopRepeat, Infinity).play();
+    this.ended = false;
   }
   duration(name = this.clipName) { return this.clips.find(c => c.name === name)?.duration || 0; }
 
   get time() { const d = this.duration(); return this.action && d ? this.action.time % d : 0; }
-  seek(t) { if (!this.action) return; this.action.time = Math.max(0, t); this.mixer.update(0); }
+  seek(t) { if (!this.action) return; this.action.time = Math.max(0, t); this.ended = false; this.mixer.update(0); }
   pause() { this.paused = true; }
-  resume() { this.paused = false; this.clock.getDelta(); }
+  resume() {
+    if (this.ended && this.action) { this.action.time = 0; this.ended = false; }   // play again from the start
+    this.paused = false; this.clock.getDelta();
+  }
 
   setBackground(color) {
     this.background = color;
@@ -177,7 +182,13 @@ export class ModelStage {
 
   #tick() {
     const dt = this.clock.getDelta();
-    if (this.mixer && !this.paused) this.mixer.update(dt * this.speed);
+    if (this.mixer && !this.paused) {
+      const step = dt * this.speed, d = this.duration();
+      if (!this.loop && this.action && d && this.action.time + step >= d) {
+        this.action.time = d - 1e-4; this.mixer.update(0);   // hold the last frame
+        this.paused = true; this.ended = true;
+      } else this.mixer.update(step);
+    }
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
   }

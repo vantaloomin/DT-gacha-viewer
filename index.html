@@ -421,7 +421,7 @@ function showVideos() {
 
 // ---------- 3D model ----------
 let modelStage = null, modelLoaded = null, modelReady = false;
-const modelView = { lighting: recall('modelLighting', 'lit'), bg: recall('modelBg', '#1d1d23'), speed: 1, autoRotate: false, autoplay: recall('modelAutoplay') === 'true' };
+const modelView = { lighting: recall('modelLighting', 'lit'), bg: recall('modelBg', '#1d1d23'), speed: 1, autoRotate: false, autoplay: recall('modelAutoplay') === 'true', loop: recall('modelLoop') === 'true' };
 const modelAdapter = {
   kind: 'model',
   ready: () => modelReady && !!modelStage?.model,
@@ -451,6 +451,7 @@ function modelSettings() {
   el.querySelector('.spd').append(segmented({ block: true, value: modelView.speed, onChange: v => { modelView.speed = v; modelStage.speed = v; },
     options: [0.25, 0.5, 1, 1.5, 2].map(v => ({ value: v, label: v + '×' })) }));
   el.querySelector('.ar').append(toggle({ label: 'Auto-play animation', checked: modelView.autoplay, onChange: v => { modelView.autoplay = v; store('modelAutoplay', v); } }));
+  el.querySelector('.ar').append(toggle({ label: 'Loop animation', checked: modelView.loop, onChange: v => { modelView.loop = v; store('modelLoop', v); modelStage.loop = v; } }));
   el.querySelector('.ar').append(toggle({ label: 'Auto-rotate', checked: modelView.autoRotate, onChange: v => { modelView.autoRotate = v; modelStage.controls.autoRotate = v; } }));
   el.querySelector('.reset').onclick = () => { modelStage.frame(); closePopovers(); };
   return el;
@@ -463,7 +464,7 @@ async function showModel() {
       const { ModelStage } = await import('./js/model-stage.js');
       modelStage = new ModelStage($('#modelBox'));
     } catch (e) { setLoading($('#modelLoading'), 'error', 'Couldn’t start the 3D viewer: ' + e.message); return; }
-    modelStage.setBackground(modelView.bg); modelStage.lighting = modelView.lighting;
+    modelStage.setBackground(modelView.bg); modelStage.lighting = modelView.lighting; modelStage.loop = modelView.loop;
     modelStage.controls.addEventListener('start', () => $('#modelHint').style.opacity = 0);
   }
   if (modelLoaded === skin.model) return;
