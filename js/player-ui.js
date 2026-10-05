@@ -15,6 +15,36 @@ import { exportAnimation, exportStill, download, safeFilename, FORMATS } from '.
 */
 
 // Groups long clip lists (3D models have up to ~100) so the picker is scannable.
+// Readable names for 3D animation clips. The game names them in English and pinyin (Chinese in Latin
+// letters); these are best-guess translations of the words that recur across the models.
+const CLIP_WORDS = {
+  idle: 'Idle', normal: '', battle: 'battle', run: 'Run', walk: 'Walk', dash: 'dash', dead: 'Defeated', die: 'Defeated',
+  beat: 'Hit', beatback: 'Knocked back', light: 'light', stun: 'Stunned', get: 'Get', up: 'up', getup: 'Get up',
+  hitfly: 'Launched', behit: 'impact', hit: 'hit', floatup: 'rising', floating: 'airborne', floatdown: 'falling', lying: 'on the ground',
+  knock: 'Knocked', down: 'down', repel: 'Pushed back', kepel: 'Pushed back', start: 'start', keep: 'hold', loop: 'loop', end: 'end',
+  jiezhan: 'Engage', zhengzha: 'Struggle', switch: 'Switch in', swith: 'Switch in', replace: 'Swap', chongci: 'Charge',
+  birth: 'Entrance', born: 'Entrance', bajian: 'Draw sword', juqing: 'Story', control: 'Held', give: 'Give', ketou: 'Kowtow',
+  hurt: 'Hurt', maze: 'Maze', ice: 'ice', wind: 'wind', attack: 'Attack', observe: 'Look around', trap: 'Trapped', full: 'full',
+  shihua: 'Petrified', fukong: 'Levitate', zhanbai: 'Defeat', xuli: 'Charge up', break: 'break', breakdown: 'break down',
+  qijingtanxian: 'Wonderland expedition', wake: 'Wake', judun: 'Raise shield', jiezhi: 'Ring', daijiezhi: 'Put on ring',
+  woquan: 'Clench fist', beknock: 'Knocked', kneel: 'Kneel', becatch: 'Caught', catch: 'Catch', xizao: 'Bathe', san: 'relaxed',
+  free: 'Freed', pick: 'Pick up', save: 'Rescue', shake: 'Shake', shilaimuhit: 'Hit by slime', sikao: 'Think', yaohuang: 'Sway',
+  kuangbao: 'Berserk', zulan: 'Block', sleep: 'Sleep', shuaidao: 'Fall over', xiayitiao: 'Startled', shenshou: 'Reach out',
+  huwei: 'Guard', devil: 'Devil', trigger: 'trigger', auto: 'auto', qianghua: 'empowered', minion: 'Minion', buff: 'buff',
+  tiandao: 'Fall', shuizha: 'Drowning', diediele: 'Stumble', kongfan: 'Empty-handed', konghe: 'Shock', minghe: 'Rebuke',
+};
+/** A best-guess readable label for an animation clip; `named` (clip -> [name, kind]) holds the game's skill names. */
+export function clipLabel(name, named = {}) {
+  if (named[name]) return named[name][0];
+  const m = /^skill_(\d+)(?:_(\d+))?(.*)$/.exec(name);
+  if (m) return `Skill ${+m[1]}${m[2] ? ` · part ${+m[2]}` : ''}${m[3] ? ' ' + m[3].replace(/_/g, ' ').trim() : ''}`;
+  const words = name.split(/_+/).flatMap(w => { const n = /^(\D*)(\d*)$/.exec(w); return n[2] ? [n[1], n[2]] : [w]; }).filter(Boolean);
+  const out = words.map(w => /^\d+$/.test(w) ? w : (CLIP_WORDS[w.toLowerCase()] ?? w)).filter(Boolean)
+    .map((w, i) => i ? w[0].toLowerCase() + w.slice(1) : w);   // sentence case
+  const s = out.join(' ').replace(/\s+/g, ' ').trim();
+  return s ? s[0].toUpperCase() + s.slice(1) : name;
+}
+
 export function groupClip(name) {
   if (/^(idle|run|walk|birth|switch|jiezhan)/.test(name)) return 'Idle & movement';
   if (/^skill/.test(name)) return 'Skills';

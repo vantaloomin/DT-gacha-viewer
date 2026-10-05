@@ -76,7 +76,7 @@
 <script type="module">
 import { icon, h, esc, store, recall, dropdown, segmented, toggle, slider, swatches, popover, toast, modal, lightbox, initTooltips, typing, anyLayerOpen, closePopovers } from './js/ui.js';
 import { SpineStage, layoutPhone } from './js/spine-stage.js';
-import { createDock, createExportDrawer, createVideoPlayer, groupClip, attachTaps, spineSettings, spineAnimItems } from './js/player-ui.js';
+import { createDock, createExportDrawer, createVideoPlayer, groupClip, clipLabel, attachTaps, spineSettings, spineAnimItems } from './js/player-ui.js';
 import { voiceSettings, saveVoiceSettings, playVoice, stopVoice, setSoundEnabled } from './js/voice.js';
 import { safeFilename } from './js/export.js';
 import { keepAlive } from './js/keepalive.js';
@@ -427,13 +427,15 @@ const modelAdapter = {
   ready: () => modelReady && !!modelStage?.model,
   get paused() { return modelStage.paused; }, get time() { return modelStage.time; }, get duration() { return modelStage.duration(); },
   pause: () => modelStage.pause(), resume: () => modelStage.resume(), seek: t => modelStage.seek(t),
-  animations: () => modelStage.clipNames.map(c => ({ value: c, label: c, group: groupClip(c) })).sort((a, b) => a.group.localeCompare(b.group) || a.label.localeCompare(b.label)),
+  // Readable names: the game's own skill names where known, best-guess translations otherwise; the clip's real name as a hint
+  animations: () => modelStage.clipNames.map(c => ({ value: c, label: clipLabel(c, hero.skillClips), hint: c, group: groupClip(c) }))
+    .sort((a, b) => a.group.localeCompare(b.group) || (a.group === 'Skills' ? a.value.localeCompare(b.value) : a.label.localeCompare(b.label))),
   current: () => modelStage.clipName,
   setAnimation: n => { modelStage.play(n); modelStage.resume(); modelDock.sync(); },   // picking a clip plays it
   settings: modelSettings,
   beginCapture: o => modelStage.beginCapture(o),
   aspect: () => { const c = modelStage.renderer.domElement; return c.width / c.height; },
-  filename: ({ turntable }) => `${hero.name} - ${skin.name} - ${modelStage.clipName}${turntable ? ' - turntable' : ''}`,
+  filename: ({ turntable }) => `${hero.name} - ${skin.name} - ${clipLabel(modelStage.clipName, hero.skillClips)}${turntable ? ' - turntable' : ''}`,
 };
 const modelDock = createDock($('#modelWrap'), modelAdapter, { onSnapshot: () => drawer.snapshot(modelAdapter) });
 

@@ -20,6 +20,8 @@
 /_tools/index_changed.json
 /_tools/extract_state.json
 /_tools/prefab_dirs.json
+/_tools/skill_clips.json
+/_tools/act_clips.json
 
 # Third-party web libraries, downloaded by _tools/vendor.py (see README for their licences)
 /vendor/

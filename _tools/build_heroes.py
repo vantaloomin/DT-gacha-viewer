@@ -138,6 +138,13 @@ def outfit_copy(h):
     refs = [v for s in h['skins'] for v in (s['art'].get('painting'), s['art'].get('card'), s['spine']) if v]
     return h['category'] == 'monster' and h['id'] >= 99000 and refs and all(v in hero_art for v in refs)
 copies = [h for h in out if outfit_copy(h)]
+
+# The game's skill names for each hero's 3D animation clips (built by build_skills.py)
+skill_clips_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'skill_clips.json')
+skill_clips = json.load(open(skill_clips_path, encoding='utf-8')) if os.path.exists(skill_clips_path) else {}
+for h in out:
+    if str(h['id']) in skill_clips:
+        h['skillClips'] = skill_clips[str(h['id'])]
 out = [h for h in out if not outfit_copy(h)]
 
 # Names, icons and colours for the classification filters (only values that occur)

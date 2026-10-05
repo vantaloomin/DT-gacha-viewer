@@ -92,6 +92,7 @@ the `_tools` folder):
 | `export_models.py` | Unity skinned meshes, Avatar skeletons and Mecanim animation clips → glTF `.glb`. |
 | `build_interactions.py` | The game's tap state machine (`SpineRole`, `SpineRoleClick`, `SpineRoleAct`) and voice cue ids. |
 | `build_rooms.py` | Goddess rooms: the skins the game layers together, the "pre" animation each idle needs, and the room background and where the goddess sits in it (`SpineRoleEx`, `GoddessRoom`). |
+| `build_skills.py` | The game's skill names for 3D animation clips: hero → skills (`Heroes`, `HeroesSkill`, `BattleSkill`) → actions (`ASkill`, `ASkillItem`) → the clip each action file plays. |
 | `build_heroes.py` | `heroes.json`: every hero, outfit, rig, image, video, model and voice. |
 | `vendor.py` | Downloads pinned copies of the web libraries into `vendor/`. |
 
