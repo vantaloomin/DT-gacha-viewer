@@ -115,13 +115,19 @@ export function createDock(stage, adapter, { onSnapshot, sound } = {}) {
 const SIZE_OPTS = [512, 1024, 1536, 2048, 2340];
 const FPS_OPTS = [15, 24, 30, 60];
 const BG_OPTS = [
+  { value: 'scene', label: 'As shown — the viewer\'s scenery', cls: 'scene' },
   { value: '', label: 'Transparent' }, { value: '#000000', label: 'Black' }, { value: '#1d1d23', label: 'Dark' },
   { value: '#ffffff', label: 'White' }, { value: '#00b140', label: 'Green screen' },
 ];
 
 export function createExportDrawer() {
   const saved = JSON.parse(recall('exportSettings', '{}') || '{}');
-  const s = Object.assign({ mode: 'animation', format: 'webp', framing: 'phone', turntable: false, size: 1024, fps: 30, bg: '', quality: 90 }, saved);
+  const s = Object.assign({ mode: 'animation', format: 'webp', framing: 'phone', turntable: false, size: 1024, fps: 30, bg: '', bgScene: true, quality: 90 }, saved);
+  if (s.bg === 'scene') s.bg = '';
+  // "As shown" (the viewer's scenery: outfit background, battlefield, goddess room) is offered when there is
+  // scenery, and chosen by default then; picking a colour or transparent instead is remembered.
+  const scenery = () => !!adapter?.hasScenery?.();
+  const bgNow = () => scenery() && s.bgScene ? 'scene' : s.bg;
   const persist = () => store('exportSettings', JSON.stringify(s));
   let adapter = null, running = null;
 
@@ -160,7 +166,11 @@ export function createExportDrawer() {
   $('.x-size').append(size);
   const fps = segmented({ block: true, value: s.fps, options: FPS_OPTS.map(v => ({ value: v, label: `${v} fps` })), onChange: v => { s.fps = v; update(); } });
   $('.x-fps').append(fps);
-  const bg = swatches({ options: BG_OPTS, value: s.bg, onChange: v => { s.bg = v; update(); } });
+  const bg = swatches({ options: BG_OPTS, value: bgNow(), onChange: v => {
+    if (v === 'scene') s.bgScene = true;
+    else { s.bg = v; if (scenery()) s.bgScene = false; }
+    update();
+  } });
   $('.x-bg').append(bg);
   const q = slider({ min: 10, max: 100, step: 5, value: s.quality, label: 'Quality', onInput: v => { s.quality = v; update(); } });
   q.style.width = '100%';
@@ -186,8 +196,11 @@ export function createExportDrawer() {
     const d = dims();
     $('.x-dims').textContent = d ? `${d[0]} × ${d[1]} px` : 'long edge ' + s.size + ' px';
     const notes = [];
-    if (!still && s.format === 'gif' && !s.bg) notes.push('GIF transparency is all-or-nothing, so soft edges turn jagged. Pick a background colour for cleaner results.');
-    if (!still && s.format === 'webm' && !s.bg) notes.push('Transparent WebM needs a browser that can encode VP9 alpha; otherwise it falls back to black.');
+    const b = bgNow();
+    bg.querySelector('[data-v="scene"]').style.display = scenery() ? '' : 'none';
+    if (b === 'scene') notes.push('Exports with the scenery shown in the viewer behind the character.');
+    if (!still && s.format === 'gif' && !b) notes.push('GIF transparency is all-or-nothing, so soft edges turn jagged. Pick a background colour for cleaner results.');
+    if (!still && s.format === 'webm' && !b) notes.push('Transparent WebM needs a browser that can encode VP9 alpha; otherwise it falls back to black.');
     if (!still && s.size >= 2048 && s.format === 'gif') notes.push('Large GIFs take a while to encode and can be very big.');
     $('.x-notes').innerHTML = notes.map(n => `<div class="note">${icon('info')}<span>${esc(n)}</span></div>`).join('');
     if (adapter?.ready()) {
@@ -197,7 +210,7 @@ export function createExportDrawer() {
       $('.x-sum').textContent = still ? 'Current frame as PNG' : `${frames} frames · ${secs.toFixed(1)} s`;
     }
     $('.x-go span').textContent = still ? 'Save PNG' : `Export ${f.label}`;
-    mode.value = s.mode; framing.value = s.framing; size.value = s.size; fps.value = s.fps; bg.value = s.bg; turn.checked = s.turntable;
+    mode.value = s.mode; framing.value = s.framing; size.value = s.size; fps.value = s.fps; bg.value = b; turn.checked = s.turntable;
   }
 
   function open(a) {
@@ -227,16 +240,19 @@ export function createExportDrawer() {
     el.querySelectorAll('.d-body button, .d-body input').forEach(b => b.disabled = true);
     const turntable = adapter.kind === 'model' && s.turntable && !still;
     const cap = adapter.beginCapture({ framing: s.framing, longEdge: s.size, fps: s.fps, still, turntable });
-    cap.setTransparent?.(true);   // the exporter draws its own background
+    const asShown = bgNow() === 'scene';
+    // the exporter draws its own background, unless the viewer's scenery is wanted
+    cap.setTransparent?.(!asShown);
+    const background = asShown ? '#000000' : s.bg;
     const base = safeFilename(adapter.filename({ still, turntable }));
     try {
       if (still) {
-        const blob = await exportStill({ width: cap.width, height: cap.height, background: s.bg, drawFrame: cap.drawFrame });
+        const blob = await exportStill({ width: cap.width, height: cap.height, background, drawFrame: cap.drawFrame });
         download(blob, base + '.png');
         toast('Saved still image', { type: 'success', message: `${base}.png · ${cap.width}×${cap.height} · ${fmtBytes(blob.size)}` });
       } else {
         const { blob, ext, alphaLost } = await exportAnimation({
-          format: s.format, width: cap.width, height: cap.height, fps: s.fps, frameCount: cap.frameCount, background: s.bg,
+          format: s.format, width: cap.width, height: cap.height, fps: s.fps, frameCount: cap.frameCount, background,
           quality: s.quality / 100, drawFrame: cap.drawFrame, signal: ctrl.signal,
           onProgress: (i, n) => { fill.style.width = (i / n * 100) + '%'; $('.x-pct').textContent = `Frame ${i} of ${n}`; },
         });

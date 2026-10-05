@@ -182,8 +182,8 @@ export function swatches({ options, value, onChange }) {
   let current = value;
   const draw = () => el.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === current));
   for (const o of options) {
-    const b = h(`<button type="button" class="swatch${o.value ? '' : ' transparent'}" data-v="${esc(o.value)}" aria-label="${esc(o.label)}" data-tip="${esc(o.label)}"></button>`);
-    if (o.value) b.style.background = o.value;
+    const b = h(`<button type="button" class="swatch${o.value ? '' : ' transparent'}${o.cls ? ' ' + o.cls : ''}" data-v="${esc(o.value)}" aria-label="${esc(o.label)}" data-tip="${esc(o.label)}"></button>`);
+    if (o.value && !o.cls) b.style.background = o.value;
     b.onclick = () => { current = o.value; draw(); onChange?.(o.value); };
     el.append(b);
   }

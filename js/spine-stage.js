@@ -469,7 +469,9 @@ export class SpineStage {
     p.bg.set(0, 0, 0, 0);
     if (!still) this.#startClean(this.anim);
     const state = p.animationState, skel = p.skeleton;
+    let withRoom = this.showRoom;
     return {
+      setTransparent: on => { withRoom = this.showRoom && !on; },
       width: W, height: H,
       frameCount: still ? 1 : Math.max(1, Math.round(this.duration() * fps)),
       drawFrame: (i, ctx) => {
@@ -478,7 +480,7 @@ export class SpineStage {
           state.apply(skel); skel.updateWorldTransform();
         }
         p.drawFrame(false);               // render into the WebGL canvas…
-        if (this.roomImg && this.showRoom && this.roomImg.complete) {   // the room behind the goddess
+        if (this.roomImg && withRoom && this.roomImg.complete) {   // the room behind the goddess
           const s = W / r.w, bg = this.#roomRect();
           ctx.drawImage(this.roomImg, (bg.x - r.x) * s, (r.y + r.h - bg.y - bg.h) * s, bg.w * s, bg.h * s);
         }

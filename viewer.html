@@ -154,6 +154,7 @@ const adapter = {
     voice: { settings: voiceSettings, save: saveVoiceSettings, greet: greetCurrent, setEnabled: v => { sound.set(v); dock.syncSound(); } },
   }),
   beginCapture: o => stage.beginCapture(o),
+  hasScenery: () => stage.hasRoom && stage.showRoom,
   aspect: f => f === 'phone' && stage.camRect ? stage.camRect.w / stage.camRect.h : null,
   filename: () => `${shown.title ? `${shown.title} - ${shown.subtitle || shown.name}` : shown.name} - ${stage.anim}`,
 };

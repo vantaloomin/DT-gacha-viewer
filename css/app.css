@@ -478,3 +478,6 @@ body.drawer-open .toasts { right: calc(min(400px, 100vw) + 18px); }
   border-radius: 10px; background: rgba(10, 10, 14, .72); color: #fff; font-size: clamp(12px, 1.6vw, 16px); line-height: 1.4; text-align: center;
   pointer-events: none; opacity: 0; transition: opacity .25s; z-index: 3; }
 .room-caption.on { opacity: 1; }
+/* export: "As shown" (the viewer's scenery) */
+.swatch.scene { background: linear-gradient(180deg, #7fb6e8 0 45%, #4f8a4b 45% 100%); }
+.swatch.scene::after { content: ''; position: absolute; left: 5px; bottom: 9px; width: 9px; height: 9px; border-radius: 50%; background: #f3d36b; }

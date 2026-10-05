@@ -526,6 +526,7 @@ const modelAdapter = {
   setAnimation: n => { modelStage.play(n); modelStage.resume(); modelDock.sync(); },   // picking a clip plays it
   settings: modelSettings,
   beginCapture: o => modelStage.beginCapture(o),
+  hasScenery: () => !!modelStage?.backdrop,
   aspect: () => { const c = modelStage.renderer.domElement; return c.width / c.height; },
   filename: ({ turntable }) => `${hero.name} - ${skin.name} - ${clipLabel(modelStage.clipName, hero.skillClips)}${turntable ? ' - turntable' : ''}`,
 };
