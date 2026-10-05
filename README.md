@@ -22,9 +22,10 @@ game's publisher. This is a fan project for personal study, unaffiliated with th
   offers to download portable copies (the official Python embeddable zip and a static FFmpeg build)
   into a `runtime` folder next to the gallery. No installers, admin rights, winget or MSIX packages;
   delete `runtime` to remove them. It needs about 300 MB, and uses the `curl` and `tar` commands
-  that come with Windows 10 and 11, or Windows PowerShell where those have been removed. If you
-  already have [Python](https://www.python.org/) 3.10+ and [FFmpeg](https://ffmpeg.org/) (built with
-  libopus and libvpx) on PATH, those are used instead.
+  that come with Windows 10 and 11, or Windows PowerShell where those have been removed. If neither
+  works, it prints which zips to download in your browser and where to put them, and the next run
+  finishes the setup. If you already have [Python](https://www.python.org/) 3.10+ and
+  [FFmpeg](https://ffmpeg.org/) (built with libopus and libvpx) on PATH, those are used instead.
 - Chrome or Edge for the viewer (it uses WebGL and WebCodecs).
 - About 6 GB of free disk space for the extracted content.
 

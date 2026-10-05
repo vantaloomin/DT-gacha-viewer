@@ -15,6 +15,7 @@
       <div class="brand"><h1>All Spine rigs<small>HEROES · GODDESSES · UI &amp; EVENTS</small></h1></div>
       <label class="field" id="searchField"><span class="s-ic"></span><input id="q" type="search" placeholder="Search rigs" autocomplete="off" aria-label="Search rigs"><kbd>/</kbd><button class="clear" type="button" aria-label="Clear search"></button></label>
       <div id="grpWrap"></div>
+      <div id="censorWrap" class="censor-toggle"></div>
     </div>
     <div class="side-list" id="list" role="listbox" aria-label="Rigs"></div>
     <div class="side-foot"><span id="count"></span><a href="index.html" id="back"></a></div>
@@ -36,7 +37,7 @@
   </main>
 </div>
 <script type="module">
-import { icon, h, esc, store, recall, dropdown, segmented, slider, initTooltips, typing, anyLayerOpen } from './js/ui.js';
+import { icon, h, esc, store, recall, dropdown, segmented, slider, toggle, initTooltips, typing, anyLayerOpen } from './js/ui.js';
 import { SpineStage, layoutPhone } from './js/spine-stage.js';
 import { createDock, createExportDrawer, attachTaps, spineSettings, spineAnimItems } from './js/player-ui.js';
 import { voiceSettings, saveVoiceSettings, playVoice, stopVoice, setSoundEnabled } from './js/voice.js';
@@ -58,7 +59,8 @@ const GROUPS = { 'spine/hero': 'Heroes', 'spine/goddess': 'Goddesses', 'spine/ui
 
 const stage = new SpineStage($('#screen'));
 stage.restricted = recall('restricted') === 'true';
-let rigs = [], current = null, visible = [], ready = false, group = recall('rigGroup', 'spine/ui');
+let rigs = [], current = null, shown = null, visible = [], ready = false, group = recall('rigGroup', 'spine/ui');
+let censored = recall('rigCensored') === 'true';   // show the game's censored ("hexie") version where there is one
 let phoneZoom = +recall('phoneZoom', 100);
 
 const [m, interactions, rooms] = await Promise.all([
@@ -66,7 +68,16 @@ const [m, interactions, rooms] = await Promise.all([
   fetch('interactions.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : {}).catch(() => ({})),
   fetch('rooms.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : {}).catch(() => ({})),
 ]);
-rigs = m.sort((a, b) => (!a.title - !b.title) || label(a).localeCompare(label(b)));
+// Censored versions ("..._hexie") are listed with their original, behind the "Censored versions" switch.
+const stem = r => r.skel.split('/').at(-1).toLowerCase().replace(/\.skel$/, '');
+const dirOf = r => r.skel.split('/').slice(0, -1).join('/').toLowerCase();
+const byDir = new Map(m.map(r => [dirOf(r), r])), byStem = new Map(m.map(r => [stem(r), r]));
+for (const r of m) {
+  if (!/hexie/i.test(r.skel)) continue;
+  const base = byDir.get(dirOf(r).replace(/_hexie$/, '')) || byStem.get(stem(r).replace(/_ui_hexie$/, '_ui').replace(/_hexie$/, ''));
+  if (base && base !== r && !base.censored) { base.censored = r; r.censoredOf = base; }
+}
+rigs = m.filter(r => !r.censoredOf).sort((a, b) => (!a.title - !b.title) || label(a).localeCompare(label(b)));
 const seen = {};
 for (const r of rigs) (seen[label(r) + '|' + r.subtitle] ||= []).push(r);
 for (const g of Object.values(seen)) if (g.length > 1 && g[0].title)
@@ -76,6 +87,12 @@ const groupDd = dropdown({ prefix: 'Show:', value: group, onChange: v => { group
   items: [{ value: 'all', label: `Everything`, hint: String(rigs.length) }, ...Object.entries(GROUPS).map(([v, l]) => ({ value: v, label: l, hint: String(rigs.filter(r => r.group === v).length) }))] });
 groupDd.style.width = '100%';
 $('#grpWrap').append(groupDd);
+const censorToggle = toggle({ label: 'Censored versions', checked: censored, onChange: v => {
+  censored = v; store('rigCensored', String(v));
+  if (current?.censored) open(current);
+} });
+censorToggle.dataset.tip = 'Show the censored version the game uses for rigs that have one';
+$('#censorWrap').append(censorToggle);
 
 function renderList() {
   const q = $('#q').value.trim().toLowerCase();
@@ -91,6 +108,7 @@ function renderList() {
     list.append(b);
   }
   $('#count').textContent = `${visible.length} rigs`;
+  $('#censorWrap').style.display = visible.some(r => r.censored) ? '' : 'none';
 }
 $('#q').oninput = renderList;
 $('#q').addEventListener('keydown', e => { if (e.key === 'Escape') { $('#q').value = ''; renderList(); $('#q').blur(); } if (e.key === 'Enter' && visible[0]) open(visible[0]); });
@@ -116,10 +134,10 @@ const adapter = {
   }),
   beginCapture: o => stage.beginCapture(o),
   aspect: f => f === 'phone' && stage.camRect ? stage.camRect.w / stage.camRect.h : null,
-  filename: () => `${current.title ? `${current.title} - ${current.subtitle || current.name}` : current.name} - ${stage.anim}`,
+  filename: () => `${shown.title ? `${shown.title} - ${shown.subtitle || shown.name}` : shown.name} - ${stage.anim}`,
 };
 const drawer = createExportDrawer();
-const greetCurrent = () => interactions[current?.skel]?.voices?.appear && playVoice(interactions[current.skel].voices.appear, { force: true });
+const greetCurrent = () => interactions[shown?.skel]?.voices?.appear && playVoice(interactions[shown.skel].voices.appear, { force: true });
 const sound = { get on() { return voiceSettings.enabled; }, set(v) { setSoundEnabled(v); if (v) greetCurrent(); } };
 const dock = createDock($('#wrap'), adapter, { onSnapshot: () => drawer.snapshot(adapter), sound });
 const taps = attachTaps($('#screen'), stage);
@@ -131,9 +149,10 @@ const layout = () => layoutPhone($('#stage'), $('#phone'), $('#screen'), phoneZo
 new ResizeObserver(layout).observe($('#stage'));
 layout();
 
-async function open(r) {
-  current = r; ready = false;
-  document.querySelectorAll('#list .item').forEach((b, i) => { const on = visible[i] === r; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); if (on) b.scrollIntoView({ block: 'nearest' }); });
+async function open(entry) {
+  const r = censored && entry.censored ? entry.censored : entry;   // the rig actually shown
+  current = entry; shown = r; ready = false;
+  document.querySelectorAll('#list .item').forEach((b, i) => { const on = visible[i] === entry; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); if (on) b.scrollIntoView({ block: 'nearest' }); });
   history.replaceState(null, '', '#' + encodeURIComponent(r.skel));
   $('#title').textContent = label(r);
   $('#sub').textContent = [r.subtitle, GROUPS[r.group]].filter(Boolean).join(' · ');
@@ -143,8 +162,8 @@ async function open(r) {
   stage.camMode = recall('camMode', 'screen');
   stopVoice();
   stage.showRoom = recall('showRoom') !== 'false';
-  try { await stage.load(r, interactions[r.skel], rooms[r.skel]); } catch (e) { if (current === r) setLoading('error', 'Couldn’t load this rig: ' + e.message); return; }
-  if (current !== r) return;
+  try { await stage.load(r, interactions[r.skel], rooms[r.skel]); } catch (e) { if (shown === r) setLoading('error', 'Couldn’t load this rig: ' + e.message); return; }
+  if (shown !== r) return;
   ready = true;
   setLoading(null);
   dock.el.style.visibility = '';
@@ -165,7 +184,9 @@ addEventListener('keydown', e => {
 });
 
 const fromHash = decodeURIComponent(location.hash.slice(1));
-const start = rigs.find(r => r.skel === fromHash);
+const linked = m.find(r => r.skel === fromHash);
+if (linked?.censoredOf) { censored = true; censorToggle.checked = true; }   // a link to a censored version
+const start = linked?.censoredOf || linked;
 if (start) { group = start.group; groupDd.value = group; }
 renderList();
 open(start || visible[0]);
