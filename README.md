@@ -38,7 +38,8 @@ process files the game has changed, so after a game patch just run it again — 
 "What's new" button lists new heroes and outfits.
 
 Finally double-click **`Open Gallery.bat`** to start a local server and open the gallery in Chrome.
-Close the minimized "Hero Gallery Server" window when you're done.
+The minimized "Hero Gallery Server" window closes by itself about a minute and a half after you
+close the last gallery tab (`python _tools\serve.py 8765 --stay` keeps a server running instead).
 
 If the game folder isn't detected, point the tools at it once:
 

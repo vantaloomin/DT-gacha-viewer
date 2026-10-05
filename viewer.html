@@ -40,6 +40,8 @@ import { icon, h, esc, store, recall, dropdown, segmented, slider, initTooltips,
 import { SpineStage, layoutPhone } from './js/spine-stage.js';
 import { createDock, createExportDrawer, attachTaps, spineSettings, spineAnimItems } from './js/player-ui.js';
 import { voiceSettings, saveVoiceSettings, playVoice, stopVoice, setSoundEnabled } from './js/voice.js';
+import { keepAlive } from './js/keepalive.js';
+keepAlive();
 
 const $ = s => document.querySelector(s);
 initTooltips();

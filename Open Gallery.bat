@@ -1,6 +1,7 @@
 @echo off
 rem Starts a local web server for the hero gallery and opens it in Chrome.
-rem Close the "Hero Gallery Server" window when you're done.
+rem The minimized "Hero Gallery Server" window closes by itself about a minute and a half after
+rem the last gallery tab is closed.
 setlocal
 set PORT=8765
 cd /d "%~dp0"

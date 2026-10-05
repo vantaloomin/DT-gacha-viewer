@@ -79,6 +79,8 @@ import { SpineStage, layoutPhone } from './js/spine-stage.js';
 import { createDock, createExportDrawer, createVideoPlayer, groupClip, attachTaps, spineSettings, spineAnimItems } from './js/player-ui.js';
 import { voiceSettings, saveVoiceSettings, playVoice, stopVoice, setSoundEnabled } from './js/voice.js';
 import { safeFilename } from './js/export.js';
+import { keepAlive } from './js/keepalive.js';
+keepAlive();
 
 const $ = s => document.querySelector(s);
 initTooltips();
