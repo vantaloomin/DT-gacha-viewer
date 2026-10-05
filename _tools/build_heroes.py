@@ -129,6 +129,17 @@ for hero in heroes.values():
     out.append(hero)
 out.sort(key=lambda h: h['name'].lower())
 
+# The game keeps copies of some hero outfits as "monster" entries (ids 99000+, named after the outfit, e.g.
+# Ophelia's Black Swan), presumably for previews and event battles. They only repeat a playable hero's outfit
+# art, so leave them out. Regular monsters that merely reuse sprites keep their own entries.
+hero_art = {v for h in out if h['category'] == 'hero' for s in h['skins']
+            for v in (s['art'].get('painting'), s['art'].get('card'), s['spine']) if v}
+def outfit_copy(h):
+    refs = [v for s in h['skins'] for v in (s['art'].get('painting'), s['art'].get('card'), s['spine']) if v]
+    return h['category'] == 'monster' and h['id'] >= 99000 and refs and all(v in hero_art for v in refs)
+copies = [h for h in out if outfit_copy(h)]
+out = [h for h in out if not outfit_copy(h)]
+
 # Names, icons and colours for the classification filters (only values that occur)
 o_t = dbs['o_t.db']
 CLASS_ICONS = {1: 'shouwei', 2: 'fuzhu', 3: 'cike', 4: 'zhanshi', 5: 'sheshou', 6: 'fashi'}       # Post.ImgJobIcon
@@ -155,3 +166,5 @@ print(f"{len(out)} heroes, {n_skins} outfits: "
       f"{sum(bool(s['art']) for h in out for s in h['skins'])} with art, "
       f"{sum(bool(s['videos']) for h in out for s in h['skins'])} with videos, "
       f"{sum(bool(s['model']) for h in out for s in h['skins'])} with 3D models")
+if copies:
+    print(f'    left out {len(copies)} copies of hero outfits listed as monsters (e.g. {copies[0]["name"]})')

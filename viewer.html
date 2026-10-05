@@ -15,7 +15,6 @@
       <div class="brand"><h1>All Spine rigs<small>HEROES · GODDESSES · UI &amp; EVENTS</small></h1></div>
       <label class="field" id="searchField"><span class="s-ic"></span><input id="q" type="search" placeholder="Search rigs" autocomplete="off" aria-label="Search rigs"><kbd>/</kbd><button class="clear" type="button" aria-label="Clear search"></button></label>
       <div id="grpWrap"></div>
-      <div id="censorWrap" class="censor-toggle"></div>
     </div>
     <div class="side-list" id="list" role="listbox" aria-label="Rigs"></div>
     <div class="side-foot"><span id="count"></span><a href="index.html" id="back"></a></div>
@@ -25,6 +24,7 @@
       <button class="btn ghost icon menu-toggle" id="menuBtn" aria-label="Show rig list"></button>
       <div style="min-width:0"><h2 id="title">Pick a rig</h2><div class="sub" id="sub"></div></div>
       <span class="spacer"></span>
+      <div id="censorWrap" style="display:none"></div>
       <button class="btn ghost icon" id="fullBtn" data-tip="Fullscreen" data-kbd="F" aria-label="Fullscreen"></button>
       <button class="btn primary" id="exportBtn" data-tip="Export image, GIF or video" data-kbd="E"></button>
     </div>
@@ -56,11 +56,23 @@ $('#exportBtn').innerHTML = `${icon('download')}<span>Export</span>`;
 const label = r => r.title || r.name.replace(/^lihui_/, '');
 const searchText = r => [r.title, r.subtitle, ...(r.also || []), r.skel].join(' ').toLowerCase();
 const GROUPS = { 'spine/hero': 'Heroes', 'spine/goddess': 'Goddesses', 'spine/ui': 'UI & events' };
+// UI & events, split by what the rigs are for (from their folder names; first match wins)
+const UI_KINDS = [
+  ['affection', 'Affection scenes', r => /^Affection/.test(r.subtitle || '') || /^haogandu\//.test(r.uiPath)],
+  ['events', 'Events & minigames', r => /^(av|spine_ui_av|spine_avpickup|monopoly|skatinggame|spine_footballgame|nailong|maoniang|baihu\/|spine_act_|mythsmagicgacha|feeding_gameplay|longguyicheng|spine_ui_(bbq|archery|surfing|qigefei|magicmonster))/.test(r.uiPath)],
+  ['expedition', 'Expedition', r => /^expedition\//.test(r.uiPath)],
+  ['pvp', 'League & PvP', r => /^(league\/|arena_|spine_ui_(arenavegeteal|onetoonearena|otoanew|gvgmain|jjzl))/.test(r.uiPath)],
+  ['icons', 'Icons & effects', r => /^spine_ui_(icon|effect|property|artifact|csfund|treasurerune|mainbtntips|pveresource|mazeentry)/.test(r.uiPath)],
+  ['other', 'Other UI', () => true],
+];
+const inGroup = (r, g) => g === 'all' || r.group === g || (g.startsWith('ui:') && r.group === 'spine/ui' && r.uiKind === g.slice(3));
 
 const stage = new SpineStage($('#screen'));
 stage.restricted = recall('restricted') === 'true';
 let rigs = [], current = null, shown = null, visible = [], ready = false, group = recall('rigGroup', 'spine/ui');
-let censored = recall('rigCensored') === 'true';   // show the game's censored ("hexie") version where there is one
+// Rigs shown in their censored ("hexie") version, chosen per rig and remembered
+const censoredSet = new Set((() => { try { return JSON.parse(recall('rigCensoredSet', '[]')); } catch { return []; } })());
+const saveCensored = () => store('rigCensoredSet', JSON.stringify([...censoredSet]));
 let phoneZoom = +recall('phoneZoom', 100);
 
 const [m, interactions, rooms] = await Promise.all([
@@ -78,26 +90,36 @@ for (const r of m) {
   if (base && base !== r && !base.censored) { base.censored = r; r.censoredOf = base; }
 }
 rigs = m.filter(r => !r.censoredOf).sort((a, b) => (!a.title - !b.title) || label(a).localeCompare(label(b)));
+for (const r of rigs) if (r.group === 'spine/ui') {
+  r.uiPath = r.skel.split('/').slice(2).join('/').toLowerCase();
+  r.uiKind = UI_KINDS.find(([, , test]) => test(r))[0];
+}
 const seen = {};
 for (const r of rigs) (seen[label(r) + '|' + r.subtitle] ||= []).push(r);
 for (const g of Object.values(seen)) if (g.length > 1 && g[0].title)
   for (const r of g) r.subtitle = [r.subtitle, r.skel.split('/').at(-2)].filter(Boolean).join(' · ');
 
 const groupDd = dropdown({ prefix: 'Show:', value: group, onChange: v => { group = v; store('rigGroup', v); renderList(); },
-  items: [{ value: 'all', label: `Everything`, hint: String(rigs.length) }, ...Object.entries(GROUPS).map(([v, l]) => ({ value: v, label: l, hint: String(rigs.filter(r => r.group === v).length) }))] });
+  items: [
+    { value: 'all', label: 'Everything', hint: String(rigs.length) },
+    ...Object.entries(GROUPS).map(([v, l]) => ({ value: v, label: v === 'spine/ui' ? 'All UI & events' : l, hint: String(rigs.filter(r => r.group === v).length), group: v === 'spine/ui' ? 'UI & events' : undefined })),
+    ...UI_KINDS.map(([k, l]) => ({ value: 'ui:' + k, label: l, hint: String(rigs.filter(r => inGroup(r, 'ui:' + k)).length), group: 'UI & events' })),
+  ] });
 groupDd.style.width = '100%';
 $('#grpWrap').append(groupDd);
-const censorToggle = toggle({ label: 'Censored versions', checked: censored, onChange: v => {
-  censored = v; store('rigCensored', String(v));
-  if (current?.censored) open(current);
+const censorToggle = toggle({ label: 'Censored version', onChange: v => {
+  if (!current?.censored) return;
+  v ? censoredSet.add(current.skel) : censoredSet.delete(current.skel);
+  saveCensored();
+  open(current);
 } });
-censorToggle.dataset.tip = 'Show the censored version the game uses for rigs that have one';
+censorToggle.dataset.tip = 'Show the censored version the game uses for this rig';
 $('#censorWrap').append(censorToggle);
 
 function renderList() {
   const q = $('#q').value.trim().toLowerCase();
   $('#searchField').classList.toggle('has-value', !!q);
-  visible = rigs.filter(r => (group === 'all' || r.group === group) && (!q || searchText(r).includes(q)));
+  visible = rigs.filter(r => inGroup(r, group) && (!q || searchText(r).includes(q)));
   const list = $('#list'); list.innerHTML = '';
   if (!visible.length) list.innerHTML = `<div class="list-empty">No rigs match${q ? ` “${esc(q)}”` : ''}.</div>`;
   for (const r of visible) {
@@ -108,7 +130,6 @@ function renderList() {
     list.append(b);
   }
   $('#count').textContent = `${visible.length} rigs`;
-  $('#censorWrap').style.display = visible.some(r => r.censored) ? '' : 'none';
 }
 $('#q').oninput = renderList;
 $('#q').addEventListener('keydown', e => { if (e.key === 'Escape') { $('#q').value = ''; renderList(); $('#q').blur(); } if (e.key === 'Enter' && visible[0]) open(visible[0]); });
@@ -150,12 +171,14 @@ new ResizeObserver(layout).observe($('#stage'));
 layout();
 
 async function open(entry) {
-  const r = censored && entry.censored ? entry.censored : entry;   // the rig actually shown
+  const r = entry.censored && censoredSet.has(entry.skel) ? entry.censored : entry;   // the rig actually shown
   current = entry; shown = r; ready = false;
+  $('#censorWrap').style.display = entry.censored ? '' : 'none';
+  censorToggle.checked = r !== entry;
   document.querySelectorAll('#list .item').forEach((b, i) => { const on = visible[i] === entry; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); if (on) b.scrollIntoView({ block: 'nearest' }); });
   history.replaceState(null, '', '#' + encodeURIComponent(r.skel));
   $('#title').textContent = label(r);
-  $('#sub').textContent = [r.subtitle, GROUPS[r.group]].filter(Boolean).join(' · ');
+  $('#sub').textContent = [r.subtitle, entry.uiKind === 'affection' ? null : entry.uiKind ? UI_KINDS.find(([k]) => k === entry.uiKind)[1] : GROUPS[r.group]].filter(Boolean).join(' · ');
   document.title = `${label(r)} · All Spine rigs`;
   setLoading('loading', 'Loading animation…');
   dock.el.style.visibility = 'hidden';
@@ -185,9 +208,9 @@ addEventListener('keydown', e => {
 
 const fromHash = decodeURIComponent(location.hash.slice(1));
 const linked = m.find(r => r.skel === fromHash);
-if (linked?.censoredOf) { censored = true; censorToggle.checked = true; }   // a link to a censored version
+if (linked?.censoredOf) { censoredSet.add(linked.censoredOf.skel); saveCensored(); }   // a link to a censored version
 const start = linked?.censoredOf || linked;
-if (start) { group = start.group; groupDd.value = group; }
+if (start && !inGroup(start, group)) { group = start.group; groupDd.value = group; }
 renderList();
 open(start || visible[0]);
 </script>
