@@ -444,14 +444,17 @@ export class SpineStage {
 
   /**
    * Prepares deterministic rendering for export. framing: 'phone' (what the screen shows) or
-   * 'tight' (everything the animation draws). Returns { width, height, frameCount, drawFrame, done }.
+   * 'tight' (what the animation draws, clipped to the screen). Returns { width, height, frameCount, drawFrame, done }.
    * For a still (frameCount 1, still: true) the current pose is captured instead.
    */
   beginCapture({ framing = 'phone', longEdge = 1024, fps = 30, still = false }) {
     const p = this.player, renderer = p.sceneRenderer, canvas = p.canvas;
     if (framing === 'tight') {
-      const b = this.#animBounds(this.anim), pad = 0.03;
-      this.exportRect = { x: b.x - b.w * pad, y: b.y - b.h * pad, w: b.w * (1 + 2 * pad), h: b.h * (1 + 2 * pad) };
+      const b = this.#animBounds(this.anim), pad = 0.03, c = this.camRect;
+      let x0 = b.x - b.w * pad, y0 = b.y - b.h * pad, x1 = b.x + b.w * (1 + pad), y1 = b.y + b.h * (1 + pad);
+      // Never wider than the screen: particles that fly off-screen would otherwise blow up the canvas.
+      if (c) { x0 = Math.max(x0, c.x); y0 = Math.max(y0, c.y); x1 = Math.min(x1, c.x + c.w); y1 = Math.min(y1, c.y + c.h); }
+      this.exportRect = x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : { ...c };
     } else {
       this.exportRect = { ...this.camRect };
     }

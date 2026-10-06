@@ -124,6 +124,7 @@ export function createExportDrawer() {
   const saved = JSON.parse(recall('exportSettings', '{}') || '{}');
   const s = Object.assign({ mode: 'animation', format: 'webp', framing: 'phone', turntable: false, size: 1024, fps: 30, bg: '', bgScene: true, quality: 90 }, saved);
   if (s.bg === 'scene') s.bg = '';
+  if (!s.framingV) { s.framing = 'phone'; s.framingV = 2; }   // 1.1.4: "As shown" became the default framing
   // "As shown" (the viewer's scenery: outfit background, battlefield, goddess room) is offered when there is
   // scenery, and chosen by default then; picking a colour or transparent instead is remembered.
   const scenery = () => !!adapter?.hasScenery?.();
@@ -158,7 +159,7 @@ export function createExportDrawer() {
     b.onclick = () => { s.format = k; update(); };
     $('.formats').append(b);
   }
-  const framing = segmented({ block: true, value: s.framing, options: [{ value: 'phone', label: 'Phone screen', tip: 'Exactly what the phone shows' }, { value: 'tight', label: 'Character only', tip: 'Cropped to everything the animation draws' }], onChange: v => { s.framing = v; update(); } });
+  const framing = segmented({ block: true, value: s.framing, options: [{ value: 'phone', label: 'As shown', tip: 'Exactly what the screen shows' }, { value: 'tight', label: 'Character only', tip: 'Cropped to what the animation draws on screen' }], onChange: v => { s.framing = v; update(); } });
   $('.x-framing').append(framing);
   const turn = toggle({ label: '360° turntable — spin the model while it animates', checked: s.turntable, onChange: v => { s.turntable = v; update(); } });
   $('.x-turn').append(turn);
