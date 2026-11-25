@@ -1,7 +1,7 @@
 """Extracts the game's CRI ADX2 (CRIWARE Atom) sound banks to browser-playable .ogg (Opus) files
 plus an index `audio/audio.json` mapping cue names to files.
 
-Inputs: StreamingAssets/res/raw/*.acb|*.awb and local_data/res_update/**/*.acb|*.awb (hashed names).
+Inputs: StreamingAssets/res/raw/*.acb|*.awb and the client's resource-update bundles (hashed names).
 A bank whose internal Name exists in both places is taken from res_update (else newest mtime).
 
 Formats (everything in @UTF is big-endian, everything in AFS2 little-endian):

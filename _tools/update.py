@@ -3,7 +3,7 @@
 Steps (each is its own script in this folder and can be run alone):
   index.py               which assets each bundle holds (incremental)
   extract.py             Spine rigs + images (incremental)
-  build_names.py         English names for rigs
+  build_names.py         localized names for rigs
   make_manifest.py       manifest.json (list of rigs)
   convert_usm.py         showcase/story videos -> WebM (incremental)
   extract_audio.py       voice/sound banks -> Ogg (incremental; optional)
@@ -16,14 +16,20 @@ Steps (each is its own script in this folder and can be run alone):
   vendor.py              local copies of the web libraries (only fetches missing files)
 Then compares heroes.json before/after and writes whatsnew.json (shown in the gallery).
 
-Usage: python update.py [--full]   (--full ignores incremental state and redoes everything)
+Usage: python update.py [--full] [--skip-audio]
+  --full ignores incremental state and redoes everything; --skip-audio leaves voice extraction untouched.
 """
 import datetime, glob, json, os, re, shutil, subprocess, sys, time
 
+for stream in (sys.stdout, sys.stderr):
+    if hasattr(stream, 'reconfigure'):
+        stream.reconfigure(encoding='utf-8', errors='replace')
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-from config import GAME, is_client, save_game_dir
+from config import GAME, data_dir, is_client, save_game_dir
 FULL = '--full' in sys.argv
+SKIP_AUDIO = '--skip-audio' in sys.argv
 FULL_AWARE = {'index.py', 'extract.py', 'convert_usm.py'}   # steps that understand --full
 
 STEPS = [
@@ -45,7 +51,11 @@ STEPS = [
 
 
 def game_version():
-    maps = glob.glob(os.path.join(GAME, 'local_data', 'res_tmp', 'bundlemap_*.txt'))
+    # Patch maps live in local_data/res_tmp (Global) or StreamingAssets/res_tmp (TW). Looked up from GAME
+    # here, not config.RES_TMP, because GAME can be set after import (first run asks for the folder).
+    folders = [os.path.join(GAME, 'local_data', 'res_tmp'),
+               os.path.join(data_dir(GAME) or GAME, 'StreamingAssets', 'res_tmp')]
+    maps = [p for folder in folders for p in glob.glob(os.path.join(folder, 'bundlemap_*.txt'))]
     nums = [int(m) for p in maps for m in re.findall(r'bundlemap_(\d+)', p)]
     return f'resource version {max(nums)}' if nums else 'base install'
 
@@ -72,7 +82,7 @@ def summarize(old, new):
 def main():
     global GAME
     if not is_client(GAME):
-        print('Could not find the Dragon Traveler client folder (the one containing DragonTraveler_Data).')
+        print('Could not find the Dragon Traveler client folder (the one containing game data and StreamingAssets).')
         try:
             path = input(r'Paste its full path here (e.g. D:\Games\DragonTraveler\client): ')
         except EOFError:
@@ -84,6 +94,9 @@ def main():
     old = json.load(open(heroes_path, encoding='utf-8')) if os.path.exists(heroes_path) else {}
     started = time.time()
     for n, (label, script, required) in enumerate(STEPS, 1):
+        if script == 'extract_audio.py' and SKIP_AUDIO:
+            print(f'\n[{n}/{len(STEPS)}] {label}: skipped (--skip-audio)')
+            continue
         path = os.path.join(HERE, script)
         if not os.path.exists(path):
             print(f'\n[{n}/{len(STEPS)}] {label}: skipped ({script} not found)')

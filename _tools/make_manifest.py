@@ -18,4 +18,4 @@ for skel in sorted(glob.glob('spine*/**/*.skel', recursive=True)):
         if info.get(k):
             rigs[-1][k] = info[k]
 json.dump(rigs, open('manifest.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=0)
-print(len(rigs), 'rigs,', sum('title' in r for r in rigs), 'with English names')
+print(len(rigs), 'rigs,', sum('title' in r for r in rigs), 'with localized names')
