@@ -37,16 +37,101 @@ def target(c):
 def save(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     open(path, 'wb').write(data)
+def is_spine(t):
+    return t.startswith(('spine/', 'spine_pc/'))
+
+
+def local(objs, ref):
+    """The object a PPtr points to, if it lives in this bundle."""
+    return objs.get(ref['m_PathID']) if ref and not ref.get('m_FileID') and ref.get('m_PathID') else None
+
+
+def text_bytes(ta):
+    s = ta.m_Script
+    return s.encode('utf-8', 'surrogateescape') if isinstance(s, str) else bytes(s)
+
+
+def save_material_page(objs, mat, folder, done):
+    """Writes the texture a Spine material draws (one atlas page) as <texture name>.png."""
+    envs = dict(mat.read_typetree()['m_SavedProperties']['m_TexEnvs'])
+    tex = local(objs, envs.get('_MainTex', {}).get('m_Texture'))
+    if not tex:
+        return 0
+    t = tex.read()
+    dest = os.path.join(folder, t.m_Name + '.png')
+    if dest in done:
+        return 0
+    done.add(dest)
+    os.makedirs(folder, exist_ok=True)
+    t.image.save(dest)
+    return 1
+
+
+def save_prefab_rigs(objs, root, folder, done):
+    """The Taiwanese client's bundles name only the Spine prefab: the skeleton, atlas and texture pages sit
+    beside it without asset paths of their own. Walk the prefab's objects to its Spine components and
+    write what they reference (SkeletonDataAsset -> skeleton, atlas assets -> atlas text and pages)."""
+    n = 0
+    stack, seen = [root], set()
+    while stack:
+        go = stack.pop()
+        if go.path_id in seen: continue
+        seen.add(go.path_id)
+        for entry in go.read_typetree().get('m_Component', []):
+            comp = local(objs, entry.get('component'))
+            if not comp: continue
+            if comp.type.name in ('Transform', 'RectTransform'):
+                for child in comp.read_typetree().get('m_Children', []):
+                    tr = local(objs, child)
+                    child_go = local(objs, tr.read_typetree().get('m_GameObject')) if tr else None
+                    if child_go: stack.append(child_go)
+            elif comp.type.name == 'MonoBehaviour':
+                try:
+                    tt = comp.read_typetree()
+                except Exception:
+                    continue
+                data = local(objs, tt.get('skeletonDataAsset'))
+                if not data: continue
+                sd = data.read_typetree()
+                files = [local(objs, sd.get('skeletonJSON'))]
+                for ref in sd.get('atlasAssets', []):
+                    atlas = local(objs, ref)
+                    if not atlas: continue
+                    at = atlas.read_typetree()
+                    files.append(local(objs, at.get('atlasFile')))
+                    for m in at.get('materials', []):
+                        mat = local(objs, m)
+                        if mat: n += save_material_page(objs, mat, folder, done)
+                for f in files:
+                    if not f: continue
+                    ta = f.read()
+                    dest = os.path.join(folder, ta.m_Name)
+                    if dest in done: continue
+                    done.add(dest)
+                    save(dest, text_bytes(ta)); n += 1
+    return n
+
+
 def work(job):
     path, wanted = job
     env = load(path); n = 0
+    objs = {o.path_id: o for o in env.objects}
+    done = set()
+    # Folders whose skeleton/atlas assets are listed by path (English client): the branch below handles them.
+    listed = {c.rsplit('/', 1)[0] for c in env.container if c.endswith('.asset')}
     for c, ptr in env.container.items():
         t = target(c)
         if not t or c not in wanted: continue
         obj = ptr.deref() if hasattr(ptr, 'deref') else ptr
         name = obj.type.name
         dest = os.path.join(OUT, t)
-        if name in ('Texture2D', 'Sprite'):
+        if is_spine(t) and name == 'GameObject' and c.endswith('.prefab'):
+            if c.rsplit('/', 1)[0] not in listed:
+                n += save_prefab_rigs(objs, obj, os.path.dirname(dest), done)
+        elif is_spine(t) and name == 'Material':
+            # a rig whose texture pages were packed into another bundle, listed there by material
+            n += save_material_page(objs, obj, os.path.dirname(dest), done)
+        elif name in ('Texture2D', 'Sprite'):
             img = obj.read().image
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             img.save(os.path.splitext(dest)[0] + '.png'); n += 1
@@ -78,7 +163,15 @@ if __name__ == '__main__':
         return [p, st.st_size, round(st.st_mtime, 3)]
     state = json.load(open('extract_state.json')) if os.path.exists('extract_state.json') and not FULL else {}
     current = {c: stamp(p) for c, p in winner.items()}
-    changed = [c for c in winner if state.get(c) != current[c]]
+    # A Spine prefab whose folder holds no skeleton or atlas yet is extracted again even if the state file
+    # lists it: versions before prefab-driven extraction recorded those prefabs without writing anything.
+    def unextracted(c):
+        t = target(c)
+        if not (t and is_spine(t) and c.endswith('.prefab')):
+            return False
+        folder = os.path.join(OUT, os.path.dirname(t))
+        return not (os.path.isdir(folder) and any(not f.lower().endswith('.png') for f in os.listdir(folder)))
+    changed = [c for c in winner if state.get(c) != current[c] or unextracted(c)]
     by_bundle = {}
     for c in changed:
         by_bundle.setdefault(winner[c], set()).add(c)

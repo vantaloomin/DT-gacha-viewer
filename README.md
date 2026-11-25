@@ -107,7 +107,7 @@ the `_tools` folder):
 |---|---|
 | `index.py` | De-obfuscates the client's Unity bundles (a junk prefix plus decoy `UnityFS` headers; the real header is the one whose size field equals the remaining file length) and records which assets each holds. |
 | `build_prefab_dirs.py` | Maps Spine prefab names (as the game's tables refer to them) to extracted folders. |
-| `extract.py` | Extracts Spine rigs (`.skel`, `.atlas`, texture pages) and hero images. Patched assets are taken from the client's update folder. Texture pages that Unity resized on import are resized back to the size the atlas declares. |
+| `extract.py` | Extracts Spine rigs (`.skel`, `.atlas`, texture pages) and hero images. Where a bundle names only a rig's prefab (the TW client), the rig is found by following the prefab to the files packed beside it. Patched assets are taken from the client's update folder. Texture pages that Unity resized on import are resized back to the size the atlas declares. |
 | `build_names.py`, `make_manifest.py` | Localized names from the game's SQLite tables (`*_Lang` tables); the rig list. |
 | `convert_usm.py` | CRI `.usm` videos → WebM (the VP9 stream is copied losslessly; ADX audio and alpha masks are merged). |
 | `extract_audio.py` | CRI ADX2 `.acb`/`.awb` banks → Ogg Opus, with its own HCA decoder (FFmpeg's doesn't decode this game's HCA v3 audio correctly). |
