@@ -1,7 +1,7 @@
 # DT Gacha Viewer
 
 A local viewer and exporter for the art in **Dragon Traveler**, built from your own copy of the
-PC client (the Steam version or the standalone launcher version). Browse every hero and outfit;
+PC client (the English client or the Taiwanese Dragon Soul client). Browse every hero and outfit;
 play the animated Spine illustrations the way the game shows them (fixed phone screen, tap reactions, voice lines); look at portraits,
 cards and backgrounds; watch the showcase videos; inspect the 3D battle models with all their
 animations; and export stills, animated WebP/GIF, WebM or PNG frames.
@@ -13,11 +13,9 @@ game's publisher. This is a fan project for personal study, unaffiliated with th
 
 ## Requirements
 
-- Windows with the Dragon Traveler PC client installed: the **Steam** version
-  (`...\steamapps\common\Dragon Traveler`) or the standalone **launcher** version (usually
-  `...\DragonTraveler\client`). Both are found automatically; it's the folder that contains
-  `DragonTraveler_Data`. Start the game once and let it finish downloading updates, so the patch
-  files are present.
+- Windows with the Global Dragon Traveler PC client, the Taiwanese Dragon Soul PC client, or both.
+  A client folder contains `DragonTraveler_Data` (Global) or `dragonsoul_Data` (TW). Start each
+  client you plan to use once and let it finish downloading updates, so its patch files are present.
 - Python 3.10+ and FFmpeg — **nothing to install**: if they aren't on PATH, `Update Gallery.bat`
   offers to download portable copies (the official Python embeddable zip and a static FFmpeg build)
   into a `runtime` folder next to the gallery. No installers, admin rights, winget or MSIX packages;
@@ -48,13 +46,33 @@ Finally double-click **`Open Gallery.bat`** to start a local server and open the
 The minimized "Hero Gallery Server" window closes by itself about a minute and a half after you
 close the last gallery tab (`python _tools\serve.py 8765 --stay` keeps a server running instead).
 
-If the game folder isn't detected, point the tools at it once:
+If the game folder isn't detected, point the tools at the client you want to extract from:
 
 ```bat
 python _tools\config.py "D:\Games\DragonTraveler\client"
 ```
 
-(or set the `DT_GAME_DIR` environment variable).
+(or set `DT_GAME_DIR` to that path). The same command works for either client. If both are installed,
+`DT_CLIENT=global` or `DT_CLIENT=tw` selects which one to detect; `DT_GAME_DIR` selects an exact path.
+Without either setting, the saved `game_dir` is used, or Global is preferred when both are detected.
+
+To use both clients together, set `game_dir` to the TW client and `reference_game_dir` to the Global
+client in `_tools/config.local.json`, then set `locale` to `enUS`:
+
+```json
+{
+  "game_dir": "D:/Games/DragonSoul/client",
+  "reference_game_dir": "D:/Games/DragonTraveler/client",
+  "locale": "enUS"
+}
+```
+
+The gallery extracts assets, models and game tables from the selected `game_dir`. For matching text
+IDs, the Global client's English strings take precedence; TW-only IDs keep their TW text. This uses
+both installs for one TW-based gallery, while keeping each asset catalog tied to its selected source.
+Leave `reference_game_dir` unset for a single-client gallery. The default locale is `enUS` for Global
+and `zhTW` for TW; `DT_LOCALE` can override it. To keep two complete galleries at the same time,
+use a separate repository copy for each client so their extracted files stay separate.
 
 ## Using the gallery
 
@@ -72,7 +90,7 @@ python _tools\config.py "D:\Games\DragonTraveler\client"
   Models hold their idle pose until you press Play or pick a clip (*Auto-play animation* / *Loop animation*).
 - **Export** — still PNG, animated WebP, GIF, WebM or a zip of PNG frames, at up to the game's native
   2340 px, with a transparent or solid background; 3D exports can spin as a 360° turntable.
-- **All Spine rigs** (`viewer.html`) — every rig in the game, including goddess rooms, affection
+- **All Spine rigs** (`viewer.html`) — every extractable rig in the selected client, including goddess rooms, affection
   scenes, events and UI animations. Goddess rooms play like the game: tap her or the objects in the room to
   change pose, take outfit parts off and put them back, or swap her hair colour, with voice lines and captions
   (Settings → *Show tap zones* shows where to tap).
@@ -89,8 +107,8 @@ the `_tools` folder):
 |---|---|
 | `index.py` | De-obfuscates the client's Unity bundles (a junk prefix plus decoy `UnityFS` headers; the real header is the one whose size field equals the remaining file length) and records which assets each holds. |
 | `build_prefab_dirs.py` | Maps Spine prefab names (as the game's tables refer to them) to extracted folders. |
-| `extract.py` | Extracts Spine rigs (`.skel`, `.atlas`, texture pages) and hero images. Patched assets are taken from `local_data/res_update`. Texture pages that Unity resized on import are resized back to the size the atlas declares. |
-| `build_names.py`, `make_manifest.py` | English names from the game's SQLite tables (`local_data/db`, `*_Lang` tables); the rig list. |
+| `extract.py` | Extracts Spine rigs (`.skel`, `.atlas`, texture pages) and hero images. Patched assets are taken from the client's update folder. Texture pages that Unity resized on import are resized back to the size the atlas declares. |
+| `build_names.py`, `make_manifest.py` | Localized names from the game's SQLite tables (`*_Lang` tables); the rig list. |
 | `convert_usm.py` | CRI `.usm` videos → WebM (the VP9 stream is copied losslessly; ADX audio and alpha masks are merged). |
 | `extract_audio.py` | CRI ADX2 `.acb`/`.awb` banks → Ogg Opus, with its own HCA decoder (FFmpeg's doesn't decode this game's HCA v3 audio correctly). |
 | `export_models.py` | Unity skinned meshes, Avatar skeletons and Mecanim animation clips → glTF `.glb`. |
@@ -129,3 +147,4 @@ Python dependencies: [UnityPy](https://github.com/K0lb3/UnityPy), NumPy, Pillow.
 The code in this repository is released under the [MIT License](LICENSE). It covers only this
 project's own code — not Dragon Traveler's art, audio, models, names or trademarks, which belong to
 the game's publisher, and not the third-party libraries above, which keep their own licences.
+

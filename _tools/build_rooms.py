@@ -23,6 +23,7 @@ from PIL import Image
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 from config import DB
+from localization import language_texts
 
 SCREEN_H = 1080   # the game's screen height in skeleton units
 
@@ -105,7 +106,7 @@ def blist(b, *fs):
 def lang(con, t):
     if not con.execute('select 1 from sqlite_master where name=?', (t + '_Lang',)).fetchone():
         return {}
-    return {k: v[4:4 + struct.unpack_from('<I', v)[0]].decode('utf-8', 'replace') for k, v in con.execute(f'select id, __BIN__enUS from "{t}_Lang"') if v}
+    return language_texts(con, t + '_Lang')
 caption = lang(o, 'SpineRoleExEvent')
 audio_json = os.path.join(ROOT, 'audio', 'audio.json')
 AJ = json.load(open(audio_json, encoding='utf-8')) if os.path.exists(audio_json) else {}
@@ -176,3 +177,4 @@ for prefab, default, anim_list in o.execute('select id, DefaultMainAnim, __BIN__
 
 json.dump(out, open(os.path.join(ROOT, 'rooms.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
 print(f'{len(out)} layered rigs, {rooms} with a room background, {interactive} with tap interactions')
+

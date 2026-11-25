@@ -19,6 +19,7 @@ import glob, html, json, os, re, sqlite3, struct
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 from config import DB
+from localization import decode_text, language_texts
 
 cons = {os.path.basename(p): sqlite3.connect(f'file:{p}?mode=ro', uri=True) for p in glob.glob(os.path.join(DB, '*.db'))}
 def find(t):
@@ -28,15 +29,11 @@ def find(t):
 def has(t, col):
     c = find(t)
     return bool(c) and col in [r[1] for r in c.execute(f'pragma table_info("{t}")')]
-def s1(v):
-    if not isinstance(v, bytes) or len(v) < 4:
-        return v
-    return v[4:4 + struct.unpack('<I', v[:4])[0]].decode('utf-8', 'replace')
 _lang = {}
 def lang(t):
     if t not in _lang:
         c = find(t + '_Lang')
-        _lang[t] = {k: s1(v) for k, v in c.execute(f'select id, __BIN__enUS from "{t}_Lang"')} if c else {}
+        _lang[t] = language_texts(c, t + '_Lang') if c else {}
     return _lang[t]
 
 class R:
@@ -212,3 +209,4 @@ for h in heroes:
 json.dump(out, open(os.path.join(ROOT, 'profiles.json'), 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
 print(f'{len(out)} profiles: {sum(bool(p["bio"].get("stories")) for p in out.values())} with a biography, '
       f'{sum(len(p["skills"]) for p in out.values())} skills, {sum(len(p["voices"]) for p in out.values())} voice lines')
+

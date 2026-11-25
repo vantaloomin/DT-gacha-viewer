@@ -1,4 +1,4 @@
-"""Builds skill_clips.json: which 3D model animation clip each hero skill plays, with the skill's English name,
+"""Builds skill_clips.json: which 3D model animation clip each hero skill plays, with the localized skill name,
 so the gallery can show "Curse Blast" instead of "skill_02_01". Keyed by hero id.
 
 Game data, followed in order:
@@ -17,6 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 from config import DB
+from localization import language_texts
 
 PREFIX = 'assets/res/act/battle/'
 CACHE = os.path.join(HERE, 'act_clips.json')
@@ -97,8 +98,7 @@ if __name__ == '__main__':
     con = {n: sqlite3.connect(f'file:{DB}/{n}?mode=ro', uri=True) for n in ('h_n.db', 'b_g.db', 'a.db')}
     lang = {}
     for (t,) in con['b_g.db'].execute("select name from sqlite_master where name = 'BattleSkill_Lang'"):
-        lang = {k: v[4:4 + struct.unpack('<I', v[:4])[0]].decode('utf-8', 'replace')
-                for k, v in con['b_g.db'].execute('select id, __BIN__enUS from BattleSkill_Lang') if v}
+        lang = language_texts(con['b_g.db'], t)
     skills = {i: (lang.get(n, ''), t, ints(a), u) for i, n, t, a, u in
               con['b_g.db'].execute('select id, LangSkillName, Skill_Type, __BIN__askill_id, ultraskill_id from BattleSkill')}
     steps = {i: ints(s) for i, s in con['a.db'].execute('select id, __BIN__step_list from ASkill')}
@@ -135,3 +135,4 @@ if __name__ == '__main__':
             out[str(hero_id)] = clips
     json.dump(out, open(os.path.join(HERE, 'skill_clips.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     print(f'{len(out)} heroes with named skill clips, {sum(len(v) for v in out.values())} clips')
+

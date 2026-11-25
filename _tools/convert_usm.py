@@ -12,6 +12,7 @@ import glob, json, os, re, sqlite3, struct, subprocess, sys, tempfile
 from multiprocessing import Pool
 
 from config import GAME, DB, RES_BASE, RES_UPDATE
+from localization import language_texts
 ROOTS = [RES_BASE + '/raw', RES_UPDATE]
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'videos')
 
@@ -30,17 +31,13 @@ def original_name(d):
     return m.group(1).decode() if m else None
 
 
-def text(b):
-    return b[4:4 + struct.unpack('<I', b[:4])[0]].decode('utf-8', 'replace') if isinstance(b, bytes) and len(b) >= 4 else ''
-
-
 def hero_show_names():
     """original video name (no .usm) -> 'Title - Subtitle - intro|loop'"""
     o = sqlite3.connect(f'file:{DB}/o_t.db?mode=ro', uri=True)
     h = sqlite3.connect(f'file:{DB}/h_n.db?mode=ro', uri=True)
-    lang = {k: text(v) for c in (o, h) for t in ('Heroes_Lang', 'RoleDress_Lang')
+    lang = {k: v for c in (o, h) for t in ('Heroes_Lang', 'RoleDress_Lang')
             if c.execute('select 1 from sqlite_master where name=?', (t,)).fetchone()
-            for k, v in c.execute(f'select id, __BIN__enUS from {t}')}
+            for k, v in language_texts(c, t).items()}
     heroes = {i: (lang.get(t, ''), lang.get(n, '')) for i, n, t in h.execute('select id, LangHeroName, LangTitle from Heroes')}
     names = {}
     for hid, dress, show, loop in o.execute('select BelongHero, LangName, HeroShow, HeroShowLoop from RoleDress order by id'):
@@ -132,3 +129,4 @@ if __name__ == '__main__':
                 print(i, flush=True)
     json.dump(log, open(os.path.join(OUT, 'convert_log.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     print('done:', sum(l['status'] == 'ok' for l in log), 'converted,', sum(l['status'] == 'up to date' for l in log), 'up to date, of', len(log))
+

@@ -1,7 +1,7 @@
 """Builds heroes.json for the gallery: every hero with each of their outfits ("dresses") and,
 per outfit, the matching Spine rig, static art, showcase videos and 3D battle model.
 
-Links (all from the game's SQLite config, client/local_data/db):
+Links (from the game's SQLite config databases):
   Heroes (h_n.db)                 id, LangTitle (personal name), LangHeroName (class), Quality, DefaultDress
   RoleDress (o_t.db)              BelongHero, LangName (outfit), SpineModel, Painting/Card/PaintScenes (+Harmony*
                                   censored variants), Icon, HeroShow/HeroShowLoop (videos), ModelID
@@ -13,10 +13,11 @@ import glob, json, os, re, sqlite3, struct
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 from config import DB
+from localization import decode_text, language_texts
 
 
 def text(b):
-    return b[4:4 + struct.unpack('<I', b[:4])[0]].decode('utf-8', 'replace') if isinstance(b, bytes) and len(b) >= 4 else ''
+    return decode_text(b)
 
 
 dbs = {n: sqlite3.connect(f'file:{DB}/{n}?mode=ro', uri=True) for n in ('h_n.db', 'o_t.db', 'm.db')}
@@ -30,8 +31,7 @@ def ints(b):
 LANG = {}
 for c in dbs.values():
     for (t,) in c.execute("select name from sqlite_master where type='table' and name like '%\\_Lang' escape '\\'"):
-        if '__BIN__enUS' in [r[1] for r in c.execute(f'pragma table_info("{t}")')]:
-            LANG.update((k, text(v)) for k, v in c.execute(f'select id, __BIN__enUS from "{t}"'))
+        LANG.update(language_texts(c, t))
 en = lambda k: LANG.get(k, '') if k else ''
 
 
@@ -190,3 +190,4 @@ print(f"{len(out)} heroes, {n_skins} outfits: "
       f"{sum(bool(s['model']) for h in out for s in h['skins'])} with 3D models")
 if copies:
     print(f'    left out {len(copies)} copies of hero outfits listed as monsters (e.g. {copies[0]["name"]})')
+

@@ -1,4 +1,4 @@
-"""Builds names.json: English display names (and the game's default skin) for each
+"""Builds names.json: localized display names (and the game's default skin) for each
 extracted Spine rig folder, read from the game's SQLite config databases.
 
 Links used:
@@ -6,31 +6,23 @@ Links used:
   GoddessRoom.SpineRole (b_g.db)       -> goddess room rigs (l2d_*)
   HeroesFriendshipBG.SpineLoop (h_n.db) -> ResSpine (o_t.db) -> affection scene rigs (haogandu_*)
   SpineRole / SpineRoleEx (o_t.db)     -> skin the game shows by default
-Text columns named Lang* hold keys like "Heroes$LangHeroName_1301"; the English text is
-in <Table>_Lang.__BIN__enUS as a uint32 length + UTF-8 bytes.
+Text columns named Lang* hold keys like "Heroes$LangHeroName_1301"; localized text is
+in <Table>_Lang.__BIN__<locale> as a uint32 length + UTF-8 bytes.
 """
-import glob, json, os, re, sqlite3, struct
+import glob, json, os, re, sqlite3
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 from config import DB as DB_DIR
-
-
-def text(b):
-    if not isinstance(b, bytes) or len(b) < 4:
-        return ''
-    n = struct.unpack('<I', b[:4])[0]
-    return b[4:4 + n].decode('utf-8', 'replace')
+from localization import language_texts
 
 
 dbs = {os.path.basename(f): sqlite3.connect(f'file:{f}?mode=ro', uri=True) for f in glob.glob(DB_DIR + '/*.db')}
 
-# Every *_Lang table, merged: key -> English
+# Every *_Lang table, merged: key -> preferred localized text
 LANG = {}
 for c in dbs.values():
     for (t,) in c.execute("select name from sqlite_master where type='table' and name like '%\\_Lang' escape '\\'"):
-        cols = [r[1] for r in c.execute(f'pragma table_info("{t}")')]
-        if '__BIN__enUS' in cols:
-            LANG.update((k, text(v)) for k, v in c.execute(f'select id, __BIN__enUS from "{t}"'))
+        LANG.update(language_texts(c, t))
 en = lambda key: LANG.get(key, '') if key else ''
 
 
@@ -115,3 +107,4 @@ for r in rows('o_t.db', 'SpineRoleEx'):
 
 json.dump(names, open(os.path.join(os.path.dirname(HERE), 'names.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1, sort_keys=True)
 print(len(names), 'rig folders named')
+
