@@ -190,4 +190,3 @@ print(f"{len(out)} heroes, {n_skins} outfits: "
       f"{sum(bool(s['model']) for h in out for s in h['skins'])} with 3D models")
 if copies:
     print(f'    left out {len(copies)} copies of hero outfits listed as monsters (e.g. {copies[0]["name"]})')
-

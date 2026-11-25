@@ -135,4 +135,3 @@ if __name__ == '__main__':
             out[str(hero_id)] = clips
     json.dump(out, open(os.path.join(HERE, 'skill_clips.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     print(f'{len(out)} heroes with named skill clips, {sum(len(v) for v in out.values())} clips')
-

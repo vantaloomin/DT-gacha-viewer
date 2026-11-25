@@ -172,4 +172,3 @@ if __name__ == '__main__':
         print('Reference game folder:', REFERENCE_GAME or '(not set)')
         print('Locale:', LOCALE)
         print('Output folder:', ROOT)
-

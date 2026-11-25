@@ -78,4 +78,3 @@ def language_texts(connection, table):
         if reference and _table_exists(reference, table) and '__BIN__enUS' in _columns(reference, table):
             out.update(_read_column(reference, table, '__BIN__enUS'))
     return out
-

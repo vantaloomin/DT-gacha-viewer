@@ -147,4 +147,3 @@ Python dependencies: [UnityPy](https://github.com/K0lb3/UnityPy), NumPy, Pillow.
 The code in this repository is released under the [MIT License](LICENSE). It covers only this
 project's own code — not Dragon Traveler's art, audio, models, names or trademarks, which belong to
 the game's publisher, and not the third-party libraries above, which keep their own licences.
-

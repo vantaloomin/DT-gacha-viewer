@@ -177,4 +177,3 @@ for prefab, default, anim_list in o.execute('select id, DefaultMainAnim, __BIN__
 
 json.dump(out, open(os.path.join(ROOT, 'rooms.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
 print(f'{len(out)} layered rigs, {rooms} with a room background, {interactive} with tap interactions')
-

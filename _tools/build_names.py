@@ -107,4 +107,3 @@ for r in rows('o_t.db', 'SpineRoleEx'):
 
 json.dump(names, open(os.path.join(os.path.dirname(HERE), 'names.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1, sort_keys=True)
 print(len(names), 'rig folders named')
-

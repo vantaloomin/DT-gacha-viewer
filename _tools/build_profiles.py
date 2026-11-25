@@ -209,4 +209,3 @@ for h in heroes:
 json.dump(out, open(os.path.join(ROOT, 'profiles.json'), 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
 print(f'{len(out)} profiles: {sum(bool(p["bio"].get("stories")) for p in out.values())} with a biography, '
       f'{sum(len(p["skills"]) for p in out.values())} skills, {sum(len(p["voices"]) for p in out.values())} voice lines')
-

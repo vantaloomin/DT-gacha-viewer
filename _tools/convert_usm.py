@@ -129,4 +129,3 @@ if __name__ == '__main__':
                 print(i, flush=True)
     json.dump(log, open(os.path.join(OUT, 'convert_log.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     print('done:', sum(l['status'] == 'ok' for l in log), 'converted,', sum(l['status'] == 'up to date' for l in log), 'up to date, of', len(log))
-
